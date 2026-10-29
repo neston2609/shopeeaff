@@ -3,6 +3,7 @@
 No production Google request is made by this suite. A separate opt-in script runs real checks.
 """
 import json,uuid,threading
+from contextlib import nullcontext
 from types import SimpleNamespace as NS
 import pytest,httpx
 from test_studio import c,product
@@ -41,7 +42,7 @@ def double_checks(monkeypatch,gemini_error=None,tts_error=None,metadata_error=No
   counts['metadata']+=1
   if metadata_error:raise metadata_error
   return {'metadata_only':True,'does_not_prove_veo_access':True,'service':{'status':'available','state':'ENABLED'},'permissions':{'status':'available','granted':['aiplatform.endpoints.predict']},'quotas':{'status':'available','remaining_capacity_verified':False}}
- monkeypatch.setattr(providers,'client',lambda:NS(models=NS(generate_content=text)))
+ monkeypatch.setattr(providers,'client',lambda:nullcontext(NS(models=NS(generate_content=text))))
  monkeypatch.setattr(verification.texttospeech,'TextToSpeechClient',lambda **_:NS(synthesize_speech=synth,list_voices=lambda **_:NS(voices=[NS(name='th-TH-Standard-A')])))
  monkeypatch.setattr(media,'probe',lambda _: {'streams':[{'codec_type':'audio'}]})
  monkeypatch.setattr(verification,'metadata',metadata)
@@ -222,3 +223,41 @@ def test_old_connection_request_cannot_verify_new_configuration(c,monkeypatch):
 def test_quote_does_not_allow_zero_priced_google_submission(c):
  p=product(c);conf=providers.config();conf.video_rate=0;set_setting('provider',conf.model_dump())
  assert c.post('/api/estimate',json={'product_id':p['id'],'provider':'google'}).status_code==422
+
+def test_metadata_forbidden_is_permission_not_quota_exhaustion():
+ response=httpx.Response(403)
+ error=httpx.HTTPStatusError('403 Client Error for URL /consumerQuotaMetrics',request=httpx.Request('GET','https://example.invalid/consumerQuotaMetrics'),response=response)
+ failure=classify(error)
+ assert failure.category=='permission' and failure.public()['provider_code']==403
+
+def test_actual_sdk_serialization_and_single_request():
+ # Exercise the actual SDK transport contract in isolation, not a production/live response.
+ from google import genai
+ from google.genai import types
+ from google.auth.credentials import AnonymousCredentials
+ credential=AnonymousCredentials();credential.token='isolated-sdk-contract-token'
+ calls=[]
+ def transport(request):
+  calls.append(json.loads(request.content))
+  return httpx.Response(200,json={'candidates':[{'content':{'role':'model','parts':[{'text':'contract-only'}]},'finishReason':'STOP'}]})
+ client=genai.Client(vertexai=True,project='test-project',location='us-central1',credentials=credential,http_options=types.HttpOptions(api_version='v1',retry_options=types.HttpRetryOptions(attempts=1),httpx_client=httpx.Client(transport=httpx.MockTransport(transport))))
+ response=client.models.generate_content(model='gemini-2.5-flash',contents='contract-only',config=types.GenerateContentConfig(max_output_tokens=256,thinking_config=types.ThinkingConfig(thinking_budget=0)))
+ assert response.text=='contract-only' and len(calls)==1
+ thinking=calls[0]['generationConfig']['thinkingConfig']
+ assert thinking.get('thinkingBudget',thinking.get('thinking_budget'))==0
+ client.close()
+
+def test_provider_keeps_real_sdk_client_open_until_submission_completes(monkeypatch):
+ from google import genai
+ from google.genai import types
+ from google.auth.credentials import AnonymousCredentials
+ calls=[]
+ def factory():
+  credential=AnonymousCredentials();credential.token='isolated-sdk-contract-token'
+  def transport(request):
+   calls.append(str(request.url))
+   return httpx.Response(200,json={'name':'projects/test/locations/us-central1/operations/contract-only','done':False})
+  return genai.Client(vertexai=True,project='test-project',location='us-central1',credentials=credential,http_options=types.HttpOptions(api_version='v1',retry_options=types.HttpRetryOptions(attempts=1),httpx_client=httpx.Client(transport=httpx.MockTransport(transport))))
+ monkeypatch.setattr(providers,'client',factory)
+ operation=providers.submit_video({'prompt':'isolated transport contract only'})
+ assert operation.name.endswith('/contract-only') and len(calls)==1

@@ -33,7 +33,7 @@ def generate_scene(job_id,index,scene,path,image,progress,stop):
    # Even timeout/transport errors may follow a server-side accepted request.
    state='rejected' if failure.category in ['authentication','permission','quota','billing','model_unavailable','configuration'] else 'submission_uncertain'
    with Session.begin() as s:s.get(Operation,key).state=state
-   raise GoogleFailure(failure.category,uncertain=state=='submission_uncertain') from None
+   raise GoogleFailure(failure.category,uncertain=state=='submission_uncertain',provider_code=failure.provider_code) from None
   with Session.begin() as s:
    row=s.get(Operation,key);row.name=name;row.state='polling'
  deadline=time.monotonic()+7200

@@ -27,14 +27,21 @@ def mock_brief(product,duration=30,style='Problem → Solution'):
  return Brief(summary=product.get('description') or name,verified_features=[x for x in [name,product.get('brand'),product.get('specifications')] if x],suggestions=['แสดงสินค้าจริงจากภาพที่ได้รับอนุญาต','ใช้ภาพระยะใกล้พร้อมคำบรรยาย'],audience='ผู้ที่กำลังค้นหาสินค้าประเภทนี้',hook=lines[0],caption=f'{name} — ดูรายละเอียดและราคาปัจจุบันที่ลิงก์สินค้า (ลิงก์ Affiliate)',hashtags=['#Shopee','#ช้อปออนไลน์','#Affiliate'],scenes=[dict(number=i+1,purpose='Hook' if i==0 else 'Product details',prompt=f'Professional vertical product showcase, {name}. {style}. Preserve the exact product appearance. No invented accessories, no unsupported demonstrations, no generated text.',narration=lines[min(i,len(lines)-1)],overlay=name if i==0 else lines[min(i,len(lines)-1)][:70],duration=8,transition='fade') for i in range(n)])
 def generate_brief(product,duration,style):
  prompt='Generate a natural Thai affiliate video storyboard. Use only supplied verified product facts; do not invent reviews, experiences, discounts or certifications. Separate creative suggestions. Scene visual prompts must be English. Include affiliate disclosure in caption. Each scene is 8 seconds. Return '+str(math.ceil(duration/8))+' scenes. Target seconds: '+str(duration)+' Style: '+style+' Product JSON: '+json.dumps(product,ensure_ascii=False)
- r=client().models.generate_content(model=config().text_model,contents=prompt,config=types.GenerateContentConfig(response_mime_type='application/json',response_schema=Brief,temperature=.5,max_output_tokens=8192))
+ with client() as ai:
+  r=ai.models.generate_content(model=config().text_model,contents=prompt,config=types.GenerateContentConfig(response_mime_type='application/json',response_schema=Brief,temperature=.5,max_output_tokens=8192))
  return Brief.model_validate_json(r.text)
 def submit_video(scene,image=None):
  c=config()
  opts=dict(aspect_ratio='9:16',duration_seconds=8,number_of_videos=1,resolution='720p',generate_audio=False)
  if c.bucket: opts['output_gcs_uri']=f'gs://{c.bucket}/shopee-aff/'
- return client().models.generate_videos(model=c.video_model,prompt=scene['prompt'],image=types.Image.from_file(location=str(image)) if image else None,config=types.GenerateVideosConfig(**opts))
-def poll_video(name): return client().operations.get(types.GenerateVideosOperation(name=name))
+ image=types.Image.from_file(location=str(image)) if image else None
+ source_type=getattr(types,'GenerateVideosSource',None)
+ source={'source':source_type(prompt=scene['prompt'],image=image)} if source_type else {'prompt':scene['prompt'],'image':image}
+ with client() as ai:
+  return ai.models.generate_videos(model=c.video_model,**source,config=types.GenerateVideosConfig(**opts))
+def poll_video(name):
+ with client() as ai:
+  return ai.operations.get(types.GenerateVideosOperation(name=name))
 def download_video(video,path):
  if video.video_bytes: path.write_bytes(video.video_bytes)
  elif video.uri and video.uri.startswith('gs://'):

@@ -82,7 +82,8 @@ def test_model_config_and_provider_adapter(monkeypatch):
  from types import SimpleNamespace
  seen={}
  def generate(**kwargs):seen.update(kwargs);return SimpleNamespace(name='projects/test/operations/123')
- monkeypatch.setattr(providers,'client',lambda:SimpleNamespace(models=SimpleNamespace(generate_videos=generate)))
+ from contextlib import nullcontext
+ monkeypatch.setattr(providers,'client',lambda:nullcontext(SimpleNamespace(models=SimpleNamespace(generate_videos=generate))))
  op=providers.submit_video({'prompt':'A product on a clean studio background'})
  assert op.name.endswith('/123') and seen['config'].duration_seconds==8 and seen['config'].aspect_ratio=='9:16'
 def test_atomic_claim_and_recovery(c):
