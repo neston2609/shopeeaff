@@ -119,13 +119,13 @@ def analyze(p:Project):
  return providers.mock_brief(product,p.duration,p.style).model_dump()
 @app.get('/api/jobs',dependencies=[Depends(auth)])
 def jobs():
- with Session() as s:return [job_json(j) for j in s.scalars(select(Job).order_by(Job.created.desc())).all()]
+ with Session() as s:return [job_json(j) for j in s.scalars(select(Job).where(Job.status!='archived').order_by(Job.created.desc())).all()]
 @app.get('/api/jobs/{id}',dependencies=[Depends(auth)])
 def job(id:str):
  with Session() as s:return job_json(get_job(s,id))
 def estimate(p:Project):
  c=providers.config();n=__import__('math').ceil(p.duration/8)
- return round(n*8*c.video_rate+c.text_reserve+8000*c.tts_rate,4) if p.provider=='google' else 0
+ return round(n*8*c.video_rate+c.text_reserve+1500*n*c.tts_rate,4) if p.provider=='google' else 0
 @app.post('/api/estimate',dependencies=[Depends(auth)])
 def estimate_api(p:Project):return {'estimate_usd':estimate(p),'scenes':__import__('math').ceil(p.duration/8),'pricing_verified':providers.config().pricing_verified,'label':'Estimated, not actual billing'}
 @app.post('/api/jobs',dependencies=[Depends(auth)])
@@ -145,7 +145,31 @@ def create_job(p:Project):
    if cost+used>budget:raise HTTPException(422,'Daily or monthly budget exceeded')
   data=p.model_dump();data['reserved_cost']=cost;data['pricing_snapshot']=c.model_dump();data['product_snapshot']=product
   if p.provider!='google' and not p.brief:data['brief']=providers.mock_brief(product,p.duration,p.style).model_dump()
-  j=Job(id=uid(),product_id=p.product_id,status='draft',stage='Review storyboard / upload assets',data=json.dumps(data,ensure_ascii=False));s.add(j);s.flush();return job_json(j)
+  j=Job(id=uid(),product_id=p.product_id,status='draft',stage='Review storyboard / upload assets',data=json.dumps(data,ensure_ascii=False));s.add(j);s.flush()
+  if p.regenerate_source:
+   source=get_job(s,p.regenerate_source);old=json.loads(source.data)
+   if source.status!='completed' or old['product_id']!=p.product_id or old['provider']!=p.provider or old['duration']!=p.duration or (p.regenerate_scene is None and not p.regenerate_voice) or (p.regenerate_scene is not None and p.regenerate_scene>=len(old['brief']['scenes'])):raise HTTPException(422,'Source project must match product, provider and duration')
+   data['brief']=old['brief'];j.data=json.dumps(data,ensure_ascii=False)
+   folder=STORAGE/'jobs'/j.id;folder.mkdir(parents=True,exist_ok=True)
+   for i in range(len(old['brief']['scenes'])):
+    for filename in [f'scene-{i}.mp4',f'voice-{i}.mp3']:
+     src=STORAGE/'jobs'/source.id/filename
+     if src.exists() and not (i==p.regenerate_scene and filename.endswith('.mp4')) and not (p.regenerate_voice and filename.endswith('.mp3')):shutil.copy2(src,folder/filename)
+  return job_json(j)
+@app.delete('/api/jobs/{id}',dependencies=[Depends(auth)])
+def archive_job(id:str):
+ with Session.begin() as s:
+  j=get_job(s,id)
+  if j.status in ['running','queued']:raise HTTPException(409,'Cancel active job first')
+  data=json.loads(j.data);data['previous_status']=j.status;j.data=json.dumps(data,ensure_ascii=False);j.status='archived'
+ return {'ok':True,'restore':f'/api/jobs/{id}/restore'}
+@app.post('/api/jobs/{id}/published',dependencies=[Depends(auth)])
+async def published(id:str,request:Request):
+ body=await request.json();url=str(body.get('url',''))
+ Product(name='Publication',url=url)
+ with Session.begin() as s:
+  j=get_job(s,id);data=json.loads(j.data);data['publication']={'url':url,'date':time.time()};j.data=json.dumps(data,ensure_ascii=False)
+ return {'ok':True}
 @app.post('/api/jobs/{id}/{action}',dependencies=[Depends(auth)])
 def action(id:str,action:str):
  with Session.begin() as s:
@@ -164,6 +188,9 @@ def action(id:str,action:str):
   elif action=='duplicate':
    data=json.loads(j.data);data['reserved_cost']=0;data['approved']=False
    new=Job(id=uid(),product_id=j.product_id,status='draft',data=json.dumps(data,ensure_ascii=False));s.add(new);s.flush();return job_json(new)
+  elif action=='restore':
+   if j.status!='archived':raise HTTPException(409,'Job is not archived')
+   j.status=json.loads(j.data).get('previous_status','draft')
   else:raise HTTPException(404)
   j.updated=time.time();return job_json(j)
 @app.put('/api/jobs/{id}/content',dependencies=[Depends(auth)])
@@ -209,13 +236,6 @@ def download(id:str,name:str):
  p=STORAGE/'jobs'/id/name
  if not p.is_file():raise HTTPException(404)
  return FileResponse(p,filename=None if name.endswith(('.mp4','.jpg','.wav')) else name)
-@app.post('/api/jobs/{id}/published',dependencies=[Depends(auth)])
-async def published(id:str,request:Request):
- body=await request.json();url=str(body.get('url',''))
- Product(name='Publication',url=url)
- with Session.begin() as s:
-  j=get_job(s,id);data=json.loads(j.data);data['publication']={'url':url,'date':time.time()};j.data=json.dumps(data,ensure_ascii=False)
- return {'ok':True}
 @app.get('/api/settings',dependencies=[Depends(auth)])
 def settings():return dict(provider=providers.config().model_dump(),status=setting('provider_status',{'status':'Not Configured','live_verified':False}),has_credentials=bool(setting('credential')),defaults=setting('defaults',{}))
 @app.put('/api/settings/provider',dependencies=[Depends(auth)])

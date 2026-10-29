@@ -10,4 +10,5 @@ node_modules/
 data/
 *.db
 *.pyc
+*.tsbuildinfo
 *.tar.gz

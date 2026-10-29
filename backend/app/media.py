@@ -5,7 +5,7 @@ def run(args):
  r=subprocess.run(args,capture_output=True,timeout=900)
  if r.returncode: raise RuntimeError(r.stderr.decode(errors='replace')[-2500:])
 def probe(path):
- r=subprocess.run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(path)],capture_output=True,timeout=30,check=True)
+ r=subprocess.run(['ffprobe','-v','error','-protocol_whitelist','file,pipe','-show_format','-show_streams','-of','json',str(path)],capture_output=True,timeout=30,check=True)
  return json.loads(r.stdout)
 def validate(path):
  p=probe(path)
@@ -30,12 +30,18 @@ def compose(folder,scenes,settings,product):
   text=scene['narration'] if settings['subtitles'] else scene['overlay']
   # Phrase-level timestamps are derived from scene audio; never represented as word alignment.
   chunks=[text[i:i+36] for i in range(0,len(text),36)]
-  ass+=f'Dialogue: 0,{timecode(cursor)},{timecode(end)},Default,,0,0,0,,'+ass_text('\\N'.join(chunks))+'\n'
+  ass+=f'Dialogue: 0,{timecode(cursor)},{timecode(end)},Default,,0,0,0,,'+'\\N'.join(ass_text(c) for c in chunks)+'\n'
   cursor=end
  if settings['provider']=='mock': ass+=f'Dialogue: 0,0:00:00.00,{timecode(settings["duration"])},Default,,0,0,1450,,MOCK • ตัวอย่างจำลอง\n'
+ color=settings.get('subtitle_color','FFFFFF');bgr=color[4:6]+color[2:4]+color[0:2]
+ ass=ass.replace('Noto Sans Thai,52,',f'Noto Sans Thai,{settings.get("subtitle_size",52)},').replace('&H00FFFFFF',f'&H00{bgr}').replace(',90,90,290,1',f',90,90,{settings.get("subtitle_margin",290)},1')
  (folder/'subtitles.ass').write_text(ass,encoding='utf-8')
  (folder/'concat.txt').write_text(''.join(f"file 'scene-{i}.mp4'\n" for i in range(len(scenes))))
  vf=f'scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,ass=subtitles.ass'
+ for i,scene in enumerate(scenes):
+  if scene.get('transition')=='fade':
+   start=i*8;end=min((i+1)*8,settings['duration'])
+   vf+=f",fade=t=in:st={start}:d=0.2:enable='between(t,{start},{start+.2})',fade=t=out:st={end-.2}:d=0.2:enable='between(t,{end-.2},{end})'"
  # Use controlled relative names and cwd to avoid filter/path injection.
  args=['ffmpeg','-y','-threads','2','-f','concat','-safe','1','-i','concat.txt','-i','narration.wav','-t',str(settings['duration']),'-vf',vf,'-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-threads','2','-c:a','aac','-b:a','160k','-af','loudnorm=I=-16:TP=-1.5:LRA=11','-movflags','+faststart','final_video.mp4']
  r=subprocess.run(args,cwd=folder,capture_output=True,timeout=1500)

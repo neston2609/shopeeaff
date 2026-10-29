@@ -47,6 +47,8 @@ cd "$ROOT/backend"
 set -a; source "$CONF/production.env";set +a
 "$ROOT/.venv/bin/alembic" upgrade head
 chown -R shopeeaff:shopeeaff "$DATA"
+chgrp -R shopeeaff "$ROOT/.venv" "$ROOT/backend" "$ROOT/frontend/.next"
+chmod -R g+rX "$ROOT/.venv" "$ROOT/backend" "$ROOT/frontend/.next"
 for service in frontend backend worker; do
  cp "$ROOT/deployment/systemd/shopee-aff-$service.service" /etc/systemd/system/
 done

@@ -74,6 +74,15 @@ def pipeline(id):
   if j.status=='cancelled':raise InterruptedError('Cancelled')
   j.status='completed';j.stage='Completed — review product accuracy before publishing';j.progress=100;j.updated=time.time();j.error=''
  if data['provider']=='google':set_setting('provider_status',{'status':'Live Generation Tested','live_verified':True})
+def recover():
+ with Session.begin() as s:
+  for j in s.scalars(select(Job).where(Job.status=='running')).all():j.status='queued';j.stage='Recovered after restart'
+def claim():
+ with Session.begin() as s:
+  s.execute(text('BEGIN IMMEDIATE'))
+  j=s.scalar(select(Job).where(Job.status=='queued').order_by(Job.created).limit(1))
+  if j:j.status='running';j.updated=time.time();return j.id
+ return None
 def main():
  init()
  # Only one dedicated worker owns this SQLite queue. flock releases automatically after a crash.
@@ -83,14 +92,9 @@ def main():
   fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
  for sig in [signal.SIGINT,signal.SIGTERM]:signal.signal(sig,lambda *_:stop.set())
  threading.Thread(target=heartbeat,daemon=True).start()
- with Session.begin() as s:
-  for j in s.scalars(select(Job).where(Job.status=='running')).all():j.status='queued';j.stage='Recovered after restart'
+ recover()
  while not stop.is_set():
-  with Session.begin() as s:
-   s.execute(text('BEGIN IMMEDIATE'))
-   j=s.scalar(select(Job).where(Job.status=='queued').order_by(Job.created).limit(1))
-   if j:j.status='running';j.updated=time.time();id=j.id
-   else:id=None
+  id=claim()
   if not id:stop.wait(2);continue
   try:pipeline(id)
   except Exception as e:

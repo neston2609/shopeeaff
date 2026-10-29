@@ -13,6 +13,12 @@ class Product(BaseModel):
  specifications:str=Field(default='',max_length=4000)
  notes:str=Field(default='',max_length=4000)
  images:list[str]=Field(default_factory=list,max_length=20)
+ @field_validator('images')
+ @classmethod
+ def valid_images(cls,v):
+  import re
+  if any(not re.fullmatch(r'[a-f0-9]{32}\.jpg',name) for name in v):raise ValueError('Invalid image identifier')
+  return v
  @field_validator('url')
  @classmethod
  def valid_url(cls,v):
@@ -26,7 +32,7 @@ class Scene(BaseModel):
  prompt:str=Field(min_length=1,max_length=3000)
  narration:str=Field(max_length=1500)
  overlay:str=Field(max_length=160)
- duration:int=Field(default=8,ge=4,le=8)
+ duration:Literal[8]=8
  transition:Literal['cut','fade']='fade'
 class Brief(BaseModel):
  summary:str
@@ -49,9 +55,15 @@ class Project(BaseModel):
  subtitles:bool=True
  music:bool=False
  resolution:Literal['1080','720']='1080'
+ subtitle_size:int=Field(default=52,ge=28,le=90)
+ subtitle_color:str=Field(default='FFFFFF',pattern=r'^[A-Fa-f0-9]{6}$')
+ subtitle_margin:int=Field(default=290,ge=140,le=600)
  approved_budget:float=Field(default=0,ge=0,le=1000)
  approved:bool=False
  brief:Brief|None=None
+ regenerate_source:str|None=Field(default=None,pattern=r'^[a-f0-9]{32}$')
+ regenerate_scene:int|None=Field(default=None,ge=0,le=14)
+ regenerate_voice:bool=False
 class ProviderConfig(BaseModel):
  auth_method:Literal['service_account','adc']='service_account'
  project:str=Field(default='',max_length=200,pattern=r'^[a-zA-Z0-9._:-]*$')

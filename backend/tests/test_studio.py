@@ -61,6 +61,46 @@ def test_structured_storyboard():
  assert len(b.scenes)==6
  assert not any('ราคา' in s.narration for s in b.scenes)
  assert 'Affiliate' in b.caption
+def test_image_identifiers_and_scene_constraints(c):
+ assert c.post('/api/products',json={'name':'x','images':['../../etc/passwd']}).status_code==422
+ from app.schemas import Scene
+ with pytest.raises(Exception):Scene(number=1,purpose='x',prompt='x',narration='x',overlay='x',duration=60)
+def test_budget_limit_prevents_paid_request(c,monkeypatch):
+ p=product(c)
+ monkeypatch.setattr(providers,'credentials',lambda:object())
+ from app.schemas import ProviderConfig
+ monkeypatch.setattr(providers,'config',lambda:ProviderConfig(max_video=.01))
+ r=c.post('/api/jobs',json={'product_id':p['id'],'provider':'google','approved':True,'approved_budget':100})
+ assert r.status_code==422 and 'budget' in r.json()['detail']
+def test_model_config_and_provider_adapter(monkeypatch):
+ from types import SimpleNamespace
+ seen={}
+ def generate(**kwargs):seen.update(kwargs);return SimpleNamespace(name='projects/test/operations/123')
+ monkeypatch.setattr(providers,'client',lambda:SimpleNamespace(models=SimpleNamespace(generate_videos=generate)))
+ op=providers.submit_video({'prompt':'A product on a clean studio background'})
+ assert op.name.endswith('/123') and seen['config'].duration_seconds==8 and seen['config'].aspect_ratio=='9:16'
+def test_atomic_claim_and_recovery(c):
+ from app.worker import recover,claim
+ from concurrent.futures import ThreadPoolExecutor
+ # Isolate this queue test from earlier deliberately queued jobs.
+ with Session.begin() as s:
+  for j in s.query(Job).all():
+   if j.status in ['queued','running']:j.status='cancelled'
+ p=product(c)
+ ids=[]
+ for _ in range(2):
+  j=c.post('/api/jobs',json={'product_id':p['id'],'approved':True}).json();c.post('/api/jobs/'+j['id']+'/start');ids.append(j['id'])
+ with ThreadPoolExecutor(max_workers=2) as pool:claimed=list(pool.map(lambda _:claim(),range(2)))
+ assert len(set(claimed))==2 and set(claimed)==set(ids)
+ recover()
+ with Session() as s:assert all(s.get(Job,id).status=='queued' for id in ids)
+def test_archive_restore_and_defaults(c):
+ p=product(c);j=c.post('/api/jobs',json={'product_id':p['id'],'approved':True}).json()
+ assert c.delete('/api/jobs/'+j['id']).status_code==200
+ assert all(x['id']!=j['id'] for x in c.get('/api/jobs').json())
+ assert c.post('/api/jobs/'+j['id']+'/restore').json()['status']=='draft'
+ assert c.put('/api/settings/defaults',json={'duration':'15','subtitle_size':60}).status_code==200
+ assert c.get('/api/settings').json()['defaults']['subtitle_size']==60
 @pytest.mark.skipif(not shutil.which('ffmpeg'),reason='FFmpeg required')
 def test_complete_mock_pipeline(c):
  from app.worker import pipeline
