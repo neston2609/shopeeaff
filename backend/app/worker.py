@@ -34,7 +34,9 @@ def pipeline(id):
  for i,scene in enumerate(scenes):
   update(id,f'Generating scene {i+1}/{len(scenes)}',15+int(50*i/len(scenes)))
   path=folder/f'scene-{i}.mp4'
-  if path.exists():media.validate(path);continue
+  if path.exists():
+   try:media.validate(path);continue
+   except Exception:path.unlink()
   if data['provider']=='mock':media.demo_scene(path,image,i)
   elif data['provider']=='manual':
    source=folder/f'scene-{i}-import'

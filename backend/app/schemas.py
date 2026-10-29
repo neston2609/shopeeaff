@@ -1,4 +1,4 @@
-from pydantic import BaseModel,Field,field_validator
+from pydantic import BaseModel,Field,field_validator,model_validator
 from typing import Literal
 from urllib.parse import urlparse
 class Product(BaseModel):
@@ -34,6 +34,12 @@ class Scene(BaseModel):
  overlay:str=Field(max_length=160)
  duration:Literal[8]=8
  transition:Literal['cut','fade']='fade'
+ subtitle_start:float=Field(default=0,ge=0,lt=8)
+ subtitle_end:float=Field(default=8,gt=0,le=8)
+ @model_validator(mode='after')
+ def timing(self):
+  if self.subtitle_end<=self.subtitle_start:raise ValueError('Subtitle end must be after start')
+  return self
 class Brief(BaseModel):
  summary:str
  verified_features:list[str]

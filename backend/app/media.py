@@ -30,9 +30,12 @@ def compose(folder,scenes,settings,product):
   text=scene['narration'] if settings['subtitles'] else scene['overlay']
   # Phrase-level timestamps are derived from scene audio; never represented as word alignment.
   chunks=[text[i:i+36] for i in range(0,len(text),36)]
-  ass+=f'Dialogue: 0,{timecode(cursor)},{timecode(end)},Default,,0,0,0,,'+'\\N'.join(ass_text(c) for c in chunks)+'\n'
+  if settings['subtitles']:
+   start=cursor+scene.get('subtitle_start',0);sub_end=min(cursor+scene.get('subtitle_end',8),end)
+   if start<sub_end:ass+=f'Dialogue: 0,{timecode(start)},{timecode(sub_end)},Default,,0,0,0,,'+'\\N'.join(ass_text(c) for c in chunks)+'\n'
+  if scene.get('overlay'):ass+=f'Dialogue: 1,{timecode(cursor)},{timecode(end)},Default,,90,90,1550,,'+ass_text(scene['overlay'][:70])+'\n'
   cursor=end
- if settings['provider']=='mock': ass+=f'Dialogue: 0,0:00:00.00,{timecode(settings["duration"])},Default,,0,0,1450,,MOCK • ตัวอย่างจำลอง\n'
+ if settings['provider']=='mock': ass+=f'Dialogue: 2,0:00:00.00,{timecode(settings["duration"])},Default,,0,0,1750,,MOCK • ตัวอย่างจำลอง\n'
  color=settings.get('subtitle_color','FFFFFF');bgr=color[4:6]+color[2:4]+color[0:2]
  ass=ass.replace('Noto Sans Thai,52,',f'Noto Sans Thai,{settings.get("subtitle_size",52)},').replace('&H00FFFFFF',f'&H00{bgr}').replace(',90,90,290,1',f',90,90,{settings.get("subtitle_margin",290)},1')
  (folder/'subtitles.ass').write_text(ass,encoding='utf-8')
