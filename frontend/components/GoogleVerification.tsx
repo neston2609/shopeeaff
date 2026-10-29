@@ -1,0 +1,10 @@
+'use client';
+type Data=Record<string,any>;
+export default function GoogleVerification({status}:{status:Data}){
+ const checks=status?.checks||{};const veo=status?.veo;
+ return <div className="google-verification" aria-live="polite">
+  <div className="verification-grid">{[['authentication','Service Account / ADC','ยืนยันตัวตนและรีเฟรช token'],['gemini','Gemini · Live text','ส่งคำขอสร้างข้อความจริง'],['tts','Cloud TTS · Live audio','สร้างและตรวจสอบไฟล์เสียงจริง'],['vertex','Vertex AI · Configuration','สถานะ API และ metadata ที่สิทธิ์อนุญาต']].map(([key,title,description])=>{const check=checks[key];return <section className="verification-card" key={key}><div className="section-title"><strong>{title}</strong><span className={'badge '+(check?.status==='passed'?'completed':check?.status==='failed'?'failed':'')}>{check?.status||'not tested'}</span></div><small>{description}</small>{check?.message&&<p role={check.status==='failed'?'alert':undefined}>{check.message}</p>}{check?.category&&<small>Error: {check.category}</small>}{key==='vertex'&&check&&<details><summary>API / Permission / Quota metadata</summary><pre>{JSON.stringify({project:check.project,region:check.region,model:check.model,service:check.service,permissions:check.permissions,quotas:check.quotas,project_lookup:check.project_lookup},null,2)}</pre><small>Metadata อาจอ่านไม่ได้เพราะสิทธิ์ IAM และไม่ได้ยืนยันความจุคงเหลือหรือสิทธิ์สร้าง Veo</small></details>}</section>})}</div>
+  {checks.tts?.status==='passed'&&status.audio_url&&<label>ฟังเสียงจากการทดสอบ Cloud TTS จริง<audio controls preload="none" src={status.audio_url}/></label>}
+  <div className="callout"><strong>Veo: {veo?.live_verified?'Live generation verified':'ยังไม่ยืนยันการสร้างวิดีโอจริง'}</strong><p>{veo?.model||'veo-3.1-fast-generate-001'} · {veo?.region||'us-central1'}</p>{veo?.live_verified?<small>Operation: {veo.evidence?.operation_name} · {new Date((veo.evidence?.verified_at||0)*1000).toLocaleString('th-TH')}</small>:<small>Test Connection ไม่สร้างวิดีโอและไม่ยืนยัน Veo จนกว่างานสร้างจริงจะเสร็จและตรวจสอบไฟล์สำเร็จ อนุมัติงบใน Studio เพื่อเริ่ม</small>}</div>
+ </div>
+}

@@ -18,6 +18,8 @@ See [Windows](docs/INSTALL_WINDOWS.md) or [Linux](docs/INSTALL_LINUX.md). Produc
 
 ## Provider truthfulness
 
+Version 1.1 adds independent authenticated/live Gemini/live TTS/configuration checks, scoped Veo operation evidence, expiring Studio quotes and at-most-once paid submission. See [Google integration update](docs/GOOGLE_INTEGRATION_UPDATE.md) for approval semantics, API compatibility and opt-in real verification commands.
+
 Mock generates a real labeled vertical MP4. Its default narration track is **silence**, not synthetic Thai speech. Upload your own narration or configure Google TTS for speech. Mock scripts are deterministic local templates. Google uses real authenticated Vertex AI requests; no fabricated API successes. Integration status remains **Implemented — Live Verification Required** until an authenticated generation completes. No paid generation is included in automated tests.
 
 ## Security and data

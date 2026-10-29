@@ -1,5 +1,10 @@
 import os,tempfile,io,json,shutil
 os.environ['STORAGE_PATH']=tempfile.mkdtemp(prefix='studio-test-')
+# Tests must never inherit a production database URL from an operator's shell.
+os.environ.pop('DATABASE_URL',None)
+os.environ['APP_ENV']='development'
+os.environ['APP_URL']='http://localhost:3000'
+os.environ['ALLOWED_HOSTS']='localhost,127.0.0.1,testserver,aff.pramool.bid'
 from cryptography.fernet import Fernet
 os.environ['CREDENTIAL_ENCRYPTION_KEY']=Fernet.generate_key().decode()
 from fastapi.testclient import TestClient
@@ -13,6 +18,7 @@ import pytest
 @pytest.fixture
 def c():
  with Session.begin() as s:
+  s.query(Record).filter(Record.kind=='ratelimit').delete()
   if not s.get(User,'tester'):s.add(User(id='tester',password=hasher.hash('test-strong-password!')))
  client=TestClient(app)
  r=client.post('/api/login',json={'username':'tester','password':'test-strong-password!'})
@@ -111,8 +117,8 @@ def test_credentials_encrypted_and_api_test_truthful(c,monkeypatch):
  assert r.status_code==200 and 'private_key' not in r.text
  encrypted=setting('credential');assert key not in encrypted
  assert json.loads(cipher().decrypt(encrypted.encode()))['project_id']=='test-project'
- monkeypatch.setattr(providers,'test_connection',lambda:{'status':'API Accessible — Model Verification Required','voices':['th-TH-Standard-A'],'live_verified':False})
- r=c.post('/api/settings/test');assert r.status_code==200 and not r.json()['live_verified']
+ monkeypatch.setattr(providers,'test_connection',lambda test_id:{'status':'API Accessible — Model Verification Required','voices':['th-TH-Standard-A'],'live_verified':False})
+ r=c.post('/api/settings/test',json={'approve_live_checks':True,'request_id':'credential-test-0001'});assert r.status_code==200 and not r.json()['live_verified']
  assert c.get('/api/settings').json()['status']['live_verified'] is False
 @pytest.mark.skipif(not shutil.which('ffmpeg'),reason='FFmpeg required')
 def test_complete_mock_pipeline(c):

@@ -43,27 +43,8 @@ def pipeline(id):
    if not source.exists():raise ValueError(f'Upload Google Flow clip {i+1} before starting')
    media.run(['ffmpeg','-y','-i',str(source),'-t','8','-an','-vf','scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25','-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-threads','2',str(path)])
   else:
-   key=f'{id}:scene:{i}'
-   with Session.begin() as s:
-    op=s.get(Operation,key)
-    if not op:s.add(Operation(id=key,job_id=id,state='intent',cost=8*data['pricing_snapshot']['video_rate']));name=None;new=True
-    else:
-     new=False;name=op.name
-     if not name:raise ValueError('Uncertain paid submission; reconcile Google operation before resuming')
-   if new:
-    op=providers.submit_video(scene,image if data['accuracy'] else None);name=op.name
-    with Session.begin() as s:r=s.get(Operation,key);r.name=name;r.state='polling'
-   for attempt in range(720):
-    update(id,f'Polling Google scene {i+1}',15+int(50*i/len(scenes)))
-    op=providers.poll_video(name)
-    if op.done:break
-    if stop.wait(10):raise InterruptedError('Worker stopping; operation saved')
-   else:raise TimeoutError('Google operation timed out; resume to continue polling')
-   if op.error:raise ValueError('Google operation failed; inspect provider console before regenerating')
-   result=op.response or op.result
-   if not result or not result.generated_videos:raise ValueError('Google returned no generated videos')
-   providers.download_video(result.generated_videos[0].video,path);media.validate(path)
-   with Session.begin() as s:s.get(Operation,key).state='done'
+   from .video_jobs import generate_scene
+   generate_scene(id,i,scene,path,image if data['accuracy'] else None,update,stop)
  update(id,'Generating narration (mock uses silence unless uploaded)',72)
  media.narration(folder,scenes,data,providers.speech)
  update(id,'Composing vertical MP4 and Thai subtitles',82)
@@ -75,7 +56,7 @@ def pipeline(id):
   j=s.get(Job,id)
   if j.status=='cancelled':raise InterruptedError('Cancelled')
   j.status='completed';j.stage='Completed — review product accuracy before publishing';j.progress=100;j.updated=time.time();j.error=''
- if data['provider']=='google':set_setting('provider_status',{'status':'Live Generation Tested','live_verified':True})
+
 def recover():
  with Session.begin() as s:
   for j in s.scalars(select(Job).where(Job.status=='running')).all():j.status='queued';j.stage='Recovered after restart'
@@ -100,9 +81,14 @@ def main():
   if not id:stop.wait(2);continue
   try:pipeline(id)
   except Exception as e:
-   logging.exception('Job %s failed',id)
+   from .google_errors import classify
+   with Session() as s: is_google=json.loads(s.get(Job,id).data).get('provider')=='google'
+   safe=classify(e) if is_google else None
+   logging.warning('Job %s failed: %s',id,safe.category if safe else type(e).__name__)
    with Session.begin() as s:
     j=s.get(Job,id)
     if j.status!='cancelled':j.status='queued' if stop.is_set() else 'failed'
-    j.error=str(e)[-1500:];j.updated=time.time()
+    j.error=str(safe) if safe else str(e)[-1500:];j.updated=time.time()
+    if safe:
+     data=json.loads(j.data);data['last_error']=safe.public();j.data=json.dumps(data,ensure_ascii=False)
 if __name__=='__main__':main()

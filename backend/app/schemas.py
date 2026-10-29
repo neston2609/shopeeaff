@@ -70,11 +70,16 @@ class Project(BaseModel):
  regenerate_source:str|None=Field(default=None,pattern=r'^[a-f0-9]{32}$')
  regenerate_scene:int|None=Field(default=None,ge=0,le=14)
  regenerate_voice:bool=False
+ quote_id:str|None=Field(default=None,pattern=r'^[a-f0-9]{32}$')
+ request_id:str|None=Field(default=None,min_length=16,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
+class ConnectionTest(BaseModel):
+ approve_live_checks:bool=False
+ request_id:str=Field(min_length=16,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
 class ProviderConfig(BaseModel):
  auth_method:Literal['service_account','adc']='service_account'
  project:str=Field(default='',max_length=200,pattern=r'^[a-zA-Z0-9._:-]*$')
  location:str=Field(default='us-central1',pattern=r'^[a-z0-9-]+$')
- video_model:Literal['veo-3.1-fast-generate-001','veo-3.1-generate-001']='veo-3.1-fast-generate-001'
+ video_model:str=Field(default='veo-3.1-fast-generate-001',max_length=150,pattern=r'^veo-[a-zA-Z0-9.-]+$')
  text_model:str=Field(default='gemini-2.5-flash',pattern=r'^[a-zA-Z0-9.-]+$')
  bucket:str=Field(default='',pattern=r'^[a-z0-9._-]*$')
  video_rate:float=Field(default=.15,ge=0,le=20)

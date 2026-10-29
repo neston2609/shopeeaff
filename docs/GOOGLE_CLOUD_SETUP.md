@@ -7,7 +7,7 @@
 5. Sign in to this application, open Google Cloud AI, upload JSON, check project ID, region and model, then save.
 6. Select a currently supported Veo model: `veo-3.1-fast-generate-001` or `veo-3.1-generate-001`. The default region is `us-central1`; validate your project/model access. Gemini text model is configurable. Optional GCS bucket is its bare name.
 7. Configure conservative USD video/second, text reserve and TTS/character estimates and record the pricing verification date. Defaults are estimates, **not verified current pricing**. Set daily/monthly/per-video limits before live use.
-8. Test Connection checks credential token refresh, accessible model listing and Thai TTS voices. Authentication alone never marks Veo generation verified.
+8. Test Connection requires approval for small live Gemini/TTS checks. It independently checks credential refresh, actual generated text, actual synthesized Thai audio and available Vertex API/IAM/quota metadata. Authentication or metadata alone never marks Veo generation verified. See [version 1.1 details](GOOGLE_INTEGRATION_UPDATE.md).
 9. Generate Test Video opens the normal paid Studio workflow. Select a product/photo, check the estimate, enter the approved budget, explicitly approve, create and start the project. No paid API request is made before this approval.
 10. Watch job status. Successful Google output is downloaded from inline video bytes or authenticated GCS storage, validated by FFprobe and composed. Only a completed live project sets Live Generation Tested.
 

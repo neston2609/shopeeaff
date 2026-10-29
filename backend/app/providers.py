@@ -19,7 +19,8 @@ def credentials():
  return service_account.Credentials.from_service_account_info(info,scopes=['https://www.googleapis.com/auth/cloud-platform'])
 def client():
  c=config()
- return genai.Client(vertexai=True,project=c.project,location=c.location,credentials=credentials(),http_options=types.HttpOptions(api_version='v1',timeout=120000))
+ # A billable submission must never be retried implicitly by the SDK.
+ return genai.Client(vertexai=True,project=c.project,location=c.location,credentials=credentials(),http_options=types.HttpOptions(api_version='v1',timeout=120000,retry_options=types.HttpRetryOptions(attempts=1)))
 def mock_brief(product,duration=30,style='Problem → Solution'):
  name=product['name']; n=math.ceil(duration/8)
  lines=[f'กำลังมองหา {name} อยู่ใช่ไหม',product.get('description','')[:180] or f'มาทำความรู้จัก {name}',f'ราคา {product["price"]:,.0f} บาท' if product.get('price') else 'ดูรายละเอียดสินค้าจากร้านค้า', 'ตรวจสอบรายละเอียดและเงื่อนไขที่ลิงก์สินค้า', 'สนใจดูเพิ่มเติมได้ที่ลิงก์สินค้า']
@@ -42,12 +43,8 @@ def download_video(video,path):
  else: raise ValueError('Provider returned no supported output; configure a Google Cloud Storage bucket')
 def speech(text,path,voice='th-TH-Standard-A',speed=1):
  c=texttospeech.TextToSpeechClient(credentials=credentials())
- r=c.synthesize_speech(input=texttospeech.SynthesisInput(text=text),voice=texttospeech.VoiceSelectionParams(language_code='th-TH',name=voice),audio_config=texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3,speaking_rate=speed))
+ r=c.synthesize_speech(input=texttospeech.SynthesisInput(text=text),voice=texttospeech.VoiceSelectionParams(language_code='th-TH',name=voice),audio_config=texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3,speaking_rate=speed),retry=None,timeout=60)
  path.write_bytes(r.audio_content)
-def test_connection():
- from google.auth.transport.requests import Request
- cred=credentials();cred.refresh(Request())
- models=list(client().models.list(config={'page_size':5}))
- tts=texttospeech.TextToSpeechClient(credentials=cred)
- voices=[v.name for v in tts.list_voices(language_code='th-TH').voices]
- return dict(status='API Accessible — Model Verification Required',voices=voices,models=[m.name for m in models][:5],live_verified=False)
+def test_connection(test_id=None):
+ from .google_verification import run_checks
+ return run_checks(test_id or __import__('uuid').uuid4().hex)
