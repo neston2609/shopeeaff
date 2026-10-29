@@ -101,6 +101,19 @@ def test_archive_restore_and_defaults(c):
  assert c.post('/api/jobs/'+j['id']+'/restore').json()['status']=='draft'
  assert c.put('/api/settings/defaults',json={'duration':'15','subtitle_size':60}).status_code==200
  assert c.get('/api/settings').json()['defaults']['subtitle_size']==60
+def test_credentials_encrypted_and_api_test_truthful(c,monkeypatch):
+ from cryptography.hazmat.primitives.asymmetric import rsa
+ from cryptography.hazmat.primitives import serialization
+ from app.security import cipher
+ key=rsa.generate_private_key(public_exponent=65537,key_size=2048).private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()).decode()
+ info={'type':'service_account','project_id':'test-project','private_key_id':'test-key','private_key':key,'client_email':'studio@test-project.iam.gserviceaccount.com','client_id':'123','token_uri':'https://oauth2.googleapis.com/token'}
+ r=c.post('/api/settings/credentials',files={'file':('key.json',json.dumps(info).encode(),'application/json')})
+ assert r.status_code==200 and 'private_key' not in r.text
+ encrypted=setting('credential');assert key not in encrypted
+ assert json.loads(cipher().decrypt(encrypted.encode()))['project_id']=='test-project'
+ monkeypatch.setattr(providers,'test_connection',lambda:{'status':'API Accessible — Model Verification Required','voices':['th-TH-Standard-A'],'live_verified':False})
+ r=c.post('/api/settings/test');assert r.status_code==200 and not r.json()['live_verified']
+ assert c.get('/api/settings').json()['status']['live_verified'] is False
 @pytest.mark.skipif(not shutil.which('ffmpeg'),reason='FFmpeg required')
 def test_complete_mock_pipeline(c):
  from app.worker import pipeline

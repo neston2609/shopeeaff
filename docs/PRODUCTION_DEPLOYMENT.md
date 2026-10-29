@@ -13,6 +13,8 @@ sudo bash scripts/deploy_production.sh
 
 This installs supported apt dependencies, Python venv dependencies, locked Node dependencies, builds Next, migrates SQLite and installs three services and backup timer. It generates secrets once, preserves data and does not overwrite other hosts. Frontend binds 127.0.0.1:3100; backend binds 127.0.0.1:8100 because 3000/8000 are occupied on this VPS. Do not expose either port publicly. Preserve SSH and existing unrelated firewall rules; allow 80/443 for web traffic.
 
+The installer now invokes `scripts/configure_https.sh` and the public readiness check by default. Set `CONFIGURE_HTTPS=0` only when deliberately preparing services before DNS is ready. The helper verifies origin routing before initial certificate issuance and refuses to overwrite a locally modified or conflicting dedicated host.
+
 ## Dedicated Nginx host and TLS
 
 First inspect `sudo nginx -T`. If no `aff.pramool.bid` site already exists:

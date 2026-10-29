@@ -57,4 +57,9 @@ cp "$ROOT/deployment/systemd/shopee-aff-backup.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now shopee-aff-frontend shopee-aff-backend shopee-aff-worker shopee-aff-backup.timer
 systemctl restart shopee-aff-frontend shopee-aff-backend shopee-aff-worker
-echo 'Application services installed. Configure the dedicated Nginx host and TLS using docs/PRODUCTION_DEPLOYMENT.md, then run scripts/check_production.sh.'
+curl --retry 15 --retry-delay 2 --retry-connrefused --fail --silent http://127.0.0.1:8100/api/health
+if [[ ${CONFIGURE_HTTPS:-1} = 1 ]]; then
+ bash "$ROOT/scripts/configure_https.sh"
+ bash "$ROOT/scripts/check_production.sh"
+fi
+echo 'Application services installed with persistent data. Initial administrator setup is documented in docs/PRODUCTION_DEPLOYMENT.md.'
