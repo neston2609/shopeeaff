@@ -19,7 +19,7 @@ if [[ ! -f "$CONF/production.env" ]]; then
  umask 027
  cat > "$CONF/production.env" <<EOF
 APP_ENV=production
-APP_NAME=Shopee Aff AI Studio
+APP_NAME="Shopee Aff AI Studio"
 APP_URL=https://aff.pramool.bid
 NEXT_PUBLIC_APP_URL=https://aff.pramool.bid
 API_BASE_URL=https://aff.pramool.bid/api
