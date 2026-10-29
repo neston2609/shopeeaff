@@ -1,0 +1,21 @@
+[Unit]
+Description=Shopee Aff Next.js
+After=network-online.target
+[Service]
+User=shopeeaff
+Group=shopeeaff
+WorkingDirectory=/app/shopeeaff/frontend
+EnvironmentFile=/etc/shopee-aff-ai-studio/production.env
+Environment=PORT=3100
+Environment=HOSTNAME=127.0.0.1
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=/usr/bin/node /app/shopeeaff/frontend/.next/standalone/server.js
+Restart=always
+RestartSec=4
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0027
+[Install]
+WantedBy=multi-user.target

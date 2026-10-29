@@ -1,0 +1,5 @@
+[Unit]
+Description=Consistent Shopee Aff backup
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /app/shopeeaff/scripts/backup_production.sh
