@@ -1,5 +1,5 @@
 """Opt-in REAL Google checks. Load production.env first. No mock adapters used."""
-import argparse,json,sys,time,uuid
+import argparse,json,sys,time,uuid,os
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'backend'))
 
@@ -12,6 +12,11 @@ def main():
  args=parser.parse_args()
  if not args.approve_text_audio:parser.error('Explicit --approve-text-audio required for real billable Gemini/TTS checks')
  if args.approved_veo_budget is not None and not args.product_id:parser.error('--product-id is required for Veo generation')
+ # Match the production services' identity so private generated audio remains readable by the API.
+ if os.name!='nt' and os.geteuid()==0 and os.getenv('APP_ENV')=='production':
+  import pwd
+  account=pwd.getpwnam('shopeeaff')
+  os.setgroups([]);os.setgid(account.pw_gid);os.setuid(account.pw_uid)
  from app.main import test_provider,create_job,action,job
  from app.schemas import ConnectionTest,Project
  from app import providers,budgets
