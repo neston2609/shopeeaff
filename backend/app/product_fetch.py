@@ -8,6 +8,9 @@ MAX_BYTES=2*1024*1024
 
 class FetchFailure(Exception):pass
 class MetadataUnavailable(FetchFailure):pass
+class ProductAccessBlocked(FetchFailure):
+ def __init__(self,url):
+  super().__init__('Shopee requires sign-in or has restricted this page. Use the Chrome import helper with your own signed-in product page.');self.url=url
 
 def validate_url(url):
  if not isinstance(url,str) or not 1<=len(url)<=2000 or re.search(r'[\x00-\x20\\]',url):
@@ -149,7 +152,7 @@ def read_page(url,deadline):
   if status in (301,302,303,307,308):
    if not headers.get('location'):raise FetchFailure('Shopee returned an invalid redirect.')
    url=urljoin(url,headers['location']);validate_url(url);continue
-  if status in (401,403,429):raise FetchFailure('Shopee blocked this public request or requires sign-in. No fields were changed. Try manual entry or authorized Shopee API access.')
+  if status in (401,403,429):raise ProductAccessBlocked(url)
   if status!=200:raise FetchFailure('The Shopee product page is unavailable. Check the link and try again.')
   return url,content
  raise FetchFailure('The Shopee link redirected too many times.')
@@ -166,7 +169,12 @@ def product_page(url):
 def fetch_information(original):
  validate_url(original);deadline=time.monotonic()+20
  try:
-  url,content=read_page(original,deadline)
+  try:url,content=read_page(original,deadline)
+  except ProductAccessBlocked as error:
+   canonical,ids=product_page(error.url)
+   if not ids:raise
+   source=urlsplit(error.url)
+   return {'original_url':original,'source_url':urlunsplit((source.scheme,source.netloc,source.path,'','')),'product_page_url':canonical,'product_reference':ids,'redirect_resolved':error.url!=original,'source':'public_redirect','status':'metadata_unavailable','data':{},'fields':[],'warnings':[str(error)+' No product fields were changed. Your affiliate link is preserved.']}
   source=urlsplit(url);source_url=urlunsplit((source.scheme,source.netloc,source.path,'',''))
   canonical,ids=product_page(url)
   base={'original_url':original,'source_url':source_url,'product_page_url':canonical or source_url,'product_reference':ids,'redirect_resolved':url!=original,'source':'public_html_metadata'}

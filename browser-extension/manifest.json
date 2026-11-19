@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Shopee Aff Product Import",
+  "version": "1.0.0",
+  "description": "Copy product details from the Shopee page you choose into your private Studio.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {"default_title": "Shopee Product Import", "default_popup": "popup.html"},
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"}
+}

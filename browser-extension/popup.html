@@ -1,0 +1,5 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shopee Product Import</title><link rel="stylesheet" href="popup.css"></head><body>
+<h1>Shopee Product Import</h1><p>Open a Shopee product in this Chrome profile and sign in yourself if required. This tool reads product details only when you click below.</p>
+<button id="read">Read This Product</button><p id="status" role="status"></p>
+<section id="preview" hidden><h2 id="name"></h2><p id="fields"></p><ul id="warnings"></ul><button id="copy">Copy Product Data</button><button id="download">Download JSON</button><p>Return to Studio and paste or upload this data under Import from Chrome. Your original affiliate link stays unchanged.</p><details><summary>Review exported data</summary><textarea id="json" readonly aria-label="Exported product data"></textarea></details></section>
+<small>No passwords, cookies or browsing history are read. No product data is sent over the network by this extension.</small><script type="module" src="popup.mjs"></script></body></html>

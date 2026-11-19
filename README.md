@@ -20,6 +20,14 @@ See [Windows](docs/INSTALL_WINDOWS.md) or [Linux](docs/INSTALL_LINUX.md). Produc
 
 ElevenLabs narration is available independently of the video provider, with an encrypted API key, Thai-capable model/voice selection and explicit budget approval. See [ElevenLabs and Gemini access](docs/ELEVENLABS_AND_GEMINI.md).
 
+## Import from a signed-in Chrome product page
+
+When Shopee requires sign-in or does not expose public HTML metadata, use **Import from Chrome** in the product editor. Download the helper ZIP there, extract it, and load its folder as an unpacked Chrome extension. See [helper installation and privacy](browser-extension/README.md). Sign into Shopee yourself, open the product resolved from your affiliate link, choose **Read This Product**, then copy or download the exported JSON. Studio validates its product IDs, previews whitelisted fields, and applies them only after your explicit action. Save the product normally afterward.
+
+The helper has only `activeTab` and `scripting` permissions, no permanent host access, no background task and no network requests. It does not read credentials, cookies or browser storage. A displayed, signed-in product page and manual extension installation are required; it does not bypass login or verification. Unavailable or ambiguous prices remain blank. Product images still require an authorized upload. The original affiliate shortlink remains unchanged.
+
+Run `cd browser-extension && npm ci && npm test` for DOM extraction, serialized-script, privacy, product-matching and affiliate-link preservation checks. The authenticated download endpoint packages only six fixed source files, excluding tests, dependencies and all runtime data.
+
 Version 1.1 adds independent authenticated/live Gemini/live TTS/configuration checks, scoped Veo operation evidence, expiring Studio quotes and at-most-once paid submission. See [Google integration update](docs/GOOGLE_INTEGRATION_UPDATE.md) for approval semantics, API compatibility and opt-in real verification commands.
 
 Mock generates a real labeled vertical MP4. Its default narration track is **silence**, not synthetic Thai speech. Upload your own narration or configure Google TTS for speech. Mock scripts are deterministic local templates. Google uses real authenticated Vertex AI requests; no fabricated API successes. Integration status remains **Implemented — Live Verification Required** until an authenticated generation completes. No paid generation is included in automated tests.

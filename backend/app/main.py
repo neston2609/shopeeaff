@@ -11,7 +11,7 @@ from .security import auth,hasher,digest,cipher,revoke_user_sessions
 from . import providers
 from . import budgets,google_verification
 from .google_errors import GoogleFailure,classify
-from . import elevenlabs,product_fetch
+from . import elevenlabs,product_fetch,browser_tools
 
 app=FastAPI(title='Shopee Aff AI Studio',docs_url=None,redoc_url=None,openapi_url=None)
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=os.getenv('ALLOWED_HOSTS','localhost,127.0.0.1,testserver,aff.pramool.bid').split(','))
@@ -103,6 +103,9 @@ def dashboard():
 @app.get('/api/products',dependencies=[Depends(auth)])
 def products():
  with Session() as s:return [payload(r) for r in s.scalars(select(Record).where(Record.kind=='product').order_by(Record.created.desc())).all()]
+@app.get('/api/tools/browser-import-extension.zip',dependencies=[Depends(auth)])
+def download_browser_import_extension():
+ return Response(content=browser_tools.extension_package(),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="shopee-aff-browser-import.zip"'})
 @app.post('/api/products/fetch-information')
 def fetch_product_information(body:ProductFetchRequest,session=Depends(auth)):
  try:product_fetch.validate_url(body.url)
