@@ -197,7 +197,7 @@ def create_job(p:Project):
    if elevenlabs.selected(p.model_dump()):
     elevenlabs.key()
     if not (p.elevenlabs_voice_id or elevenlabs.config().voice_id) or not .7<=p.speed<=1.2:raise elevenlabs.SpeechFailure('configuration')
-  if p.accuracy and not product.get('images'):raise HTTPException(422,'Product Accuracy Mode requires an authorized product image')
+  if p.accuracy and not product.get('images'):raise HTTPException(422,'Upload a product image in Studio or My Products before using Product Accuracy Mode. Use a photo you own or are authorized to use.')
   all_jobs=s.scalars(select(Job)).all()
   previews=s.scalars(select(Record).where(Record.kind=='voice_preview')).all()
   now=time.time()

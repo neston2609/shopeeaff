@@ -56,6 +56,25 @@ def test_approval_and_queue(c):
  assert c.post('/api/jobs/'+j['id']+'/start').status_code==409
  assert c.post('/api/jobs/'+j['id']+'/cancel').json()['status']=='cancelled'
  assert c.post('/api/jobs/'+j['id']+'/resume').json()['status']=='queued'
+
+def test_accuracy_mode_requires_image_then_accepts_uploaded_reference(c):
+ p=c.post('/api/products',json={'name':'Image reference test'}).json()
+ body={'product_id':p['id'],'provider':'mock','accuracy':True,'duration':15,'approved':True}
+ before=len(c.get('/api/jobs').json())
+ rejected=c.post('/api/jobs',json=body)
+ assert rejected.status_code==422 and 'Upload a product image' in rejected.json()['detail']
+ assert len(c.get('/api/jobs').json())==before
+ image=io.BytesIO();Image.new('RGB',(100,100),'blue').save(image,'PNG')
+ uploaded=c.post('/api/products/'+p['id']+'/images',files={'file':('reference.png',image.getvalue(),'image/png')})
+ assert uploaded.status_code==200 and len(uploaded.json()['images'])==1
+ result=c.post('/api/jobs',json=body)
+ assert result.status_code==200 and result.json()['status']=='draft'
+ assert result.json()['product_snapshot']['images']==uploaded.json()['images']
+
+def test_concept_video_without_accuracy_mode_does_not_require_image(c):
+ p=c.post('/api/products',json={'name':'Concept without reference'}).json()
+ result=c.post('/api/jobs',json={'product_id':p['id'],'provider':'mock','accuracy':False,'approved':True})
+ assert result.status_code==200 and result.json()['status']=='draft'
 def test_uncertain_paid_submission_blocks_retry(c):
  p=product(c)
  j=c.post('/api/jobs',json={'product_id':p['id'],'approved':True}).json()
