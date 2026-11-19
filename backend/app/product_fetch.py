@@ -7,6 +7,7 @@ HOSTS=('shopee.co.th','shopee.com','shope.ee')
 MAX_BYTES=2*1024*1024
 
 class FetchFailure(Exception):pass
+class MetadataUnavailable(FetchFailure):pass
 
 def validate_url(url):
  if not isinstance(url,str) or not 1<=len(url)<=2000 or re.search(r'[\x00-\x20\\]',url):
@@ -116,7 +117,7 @@ def extract(html,final_url):
  is_product=m.get('og:type','').lower() in ('product','product.item') or 'product:price:amount' in m
  name=clean(node.get('name') or (m.get('og:title') if is_product else ''),200)
  if not name or name.lower() in ('shopee','shopee thailand','shopee thailand | buy and sell on mobile or online'):
-  raise FetchFailure('Shopee did not expose public product information in this page. It may require JavaScript, sign-in or authorized Shopee API access. No fields were changed.')
+  raise MetadataUnavailable('Shopee did not expose public product information in this page. It may require JavaScript, sign-in or authorized Shopee API access. No fields were changed.')
  data={'name':name};warnings=[]
  for field,limit in [('description',10000),('category',200)]:
   value=clean(node.get(field) or (m.get('og:description') if field=='description' else ''),limit)
@@ -142,19 +143,44 @@ def extract(html,final_url):
  warnings.append('Review product details, price and variant before saving. Missing fields were left unchanged; images must be uploaded separately.')
  return data,warnings
 
+def read_page(url,deadline):
+ for _ in range(5):
+  status,headers,content=request_page(url,deadline)
+  if status in (301,302,303,307,308):
+   if not headers.get('location'):raise FetchFailure('Shopee returned an invalid redirect.')
+   url=urljoin(url,headers['location']);validate_url(url);continue
+  if status in (401,403,429):raise FetchFailure('Shopee blocked this public request or requires sign-in. No fields were changed. Try manual entry or authorized Shopee API access.')
+  if status!=200:raise FetchFailure('The Shopee product page is unavailable. Check the link and try again.')
+  return url,content
+ raise FetchFailure('The Shopee link redirected too many times.')
+
+def product_page(url):
+ """Normalize only recognized product paths for reading, never the saved affiliate URL."""
+ u=validate_url(url)
+ if u.hostname not in ('shopee.co.th','www.shopee.co.th'):return None,None
+ match=re.fullmatch(r'/(?:opaanlp|product)/(\d+)/(\d+)/?',u.path) or re.search(r'-i\.(\d+)\.(\d+)/?$',u.path)
+ if not match:return None,None
+ shop,item=match.groups()
+ return f'https://shopee.co.th/product/{shop}/{item}',{'shop_id':shop,'item_id':item}
+
 def fetch_information(original):
- validate_url(original);url=original;deadline=time.monotonic()+20
+ validate_url(original);deadline=time.monotonic()+20
  try:
-  for _ in range(5):
-   status,headers,content=request_page(url,deadline)
-   if status in (301,302,303,307,308):
-    if not headers.get('location'):raise FetchFailure('Shopee returned an invalid redirect.')
-    url=urljoin(url,headers['location']);validate_url(url);continue
-   if status in (401,403,429):raise FetchFailure('Shopee blocked this public request or requires sign-in. No fields were changed. Try manual entry or authorized Shopee API access.')
-   if status!=200:raise FetchFailure('The Shopee product page is unavailable. Check the link and try again.')
-   data,warnings=extract(content.decode('utf-8',errors='replace'),url)
-   source=urlsplit(url)
-   return {'data':data,'original_url':original,'source_url':urlunsplit((source.scheme,source.netloc,source.path,'','')),'fields':list(data),'warnings':warnings,'source':'public_html_metadata'}
-  raise FetchFailure('The Shopee link redirected too many times.')
+  url,content=read_page(original,deadline)
+  source=urlsplit(url);source_url=urlunsplit((source.scheme,source.netloc,source.path,'',''))
+  canonical,ids=product_page(url)
+  base={'original_url':original,'source_url':source_url,'product_page_url':canonical or source_url,'product_reference':ids,'redirect_resolved':url!=original,'source':'public_html_metadata'}
+  try:data,warnings=extract(content.decode('utf-8',errors='replace'),url)
+  except MetadataUnavailable:
+   data=None;warnings=[]
+   if canonical and canonical!=source_url:
+    # One normal public product-page lookup; never retry blocked requests or use private APIs.
+    try:
+     resolved,content=read_page(canonical,deadline)
+     data,warnings=extract(content.decode('utf-8',errors='replace'),resolved)
+    except Exception:pass
+   if data is None:
+    return {**base,'status':'metadata_unavailable','data':{},'fields':[],'warnings':['The link opened successfully, but Shopee did not expose public product name or price metadata. The page may require JavaScript or authorized API access. No product fields were changed. Your original affiliate link is preserved.']}
+  return {**base,'status':'fetched','data':data,'fields':list(data),'warnings':warnings}
  except FetchFailure:raise
  except Exception:raise FetchFailure('Could not fetch Shopee information. The request failed or timed out; no fields were changed.') from None

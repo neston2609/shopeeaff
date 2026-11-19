@@ -69,10 +69,39 @@ def test_fetch_is_authenticated_csrf_protected_and_does_not_save(c,monkeypatch):
 def test_shell_only_and_blocked_responses_are_honest(c,monkeypatch):
  monkeypatch.setattr(f,'request_page',lambda *_:(200,{},b'<html><script src="app.js"></script></html>'))
  r=c.post('/api/products/fetch-information',json={'url':URL})
- assert r.status_code==422 and 'JavaScript' in r.json()['detail']
+ assert r.status_code==200 and r.json()['status']=='metadata_unavailable'
+ assert r.json()['data']=={} and 'JavaScript' in r.json()['warnings'][0]
  monkeypatch.setattr(f,'request_page',lambda *_:(403,{},b'private provider error'))
  r=c.post('/api/products/fetch-information',json={'url':URL})
  assert r.status_code==422 and 'private provider error' not in r.text
+
+def test_shortlink_query_is_kept_while_canonical_page_supplies_metadata(monkeypatch):
+ original='https://s.shopee.co.th/7VHd5tqD5d?share_channel_code=6'
+ target='https://shopee.co.th/opaanlp/153078644/40303177573?__mobile__=1&tracking=example'
+ canonical='https://shopee.co.th/product/153078644/40303177573'
+ replies=[(301,{'location':target},b''),(200,{},b'<html>JavaScript shell</html>'),(200,{},html().encode())];seen=[]
+ def request(url,_):seen.append(url);return replies.pop(0)
+ monkeypatch.setattr(f,'request_page',request)
+ result=f.fetch_information(original)
+ assert seen==[original,target,canonical]
+ assert result['status']=='fetched' and result['data']['name']=='Thai product'
+ assert result['original_url']==original and 'url' not in result['data']
+ assert result['product_reference']=={'shop_id':'153078644','item_id':'40303177573'}
+ assert result['product_page_url']==canonical and result['redirect_resolved']
+
+def test_resolved_shortlink_with_no_public_data_does_not_claim_import(monkeypatch):
+ original='https://s.shopee.co.th/7VHd5tqD5d?share_channel_code=6'
+ target='https://shopee.co.th/opaanlp/153078644/40303177573'
+ replies=[(302,{'location':target},b''),(200,{},b'<html>JavaScript shell</html>'),(403,{},b'blocked')]
+ monkeypatch.setattr(f,'request_page',lambda *_:replies.pop(0))
+ result=f.fetch_information(original)
+ assert result['original_url']==original and result['status']=='metadata_unavailable'
+ assert result['data']=={} and result['fields']==[] and result['redirect_resolved']
+
+@pytest.mark.parametrize('url',['https://shopee.co.th/product/123/456?x=y','https://shopee.co.th/opaanlp/123/456','https://shopee.co.th/product-name-i.123.456'])
+def test_recognized_product_paths_are_normalized_only_for_reading(url):
+ assert f.product_page(url)==('https://shopee.co.th/product/123/456',{'shop_id':'123','item_id':'456'})
+ assert f.product_page('https://shopee.co.th/shop/123')==(None,None)
 
 def test_oversized_html_is_rejected(monkeypatch):
  monkeypatch.setattr(f,'MAX_BYTES',10)
