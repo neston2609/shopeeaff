@@ -1,7 +1,7 @@
 import time,json,logging,signal,threading,os
 from sqlalchemy import select,text
 from .db import *
-from . import providers,media
+from . import providers,media,elevenlabs
 stop=threading.Event()
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
 def update(id,stage,progress):
@@ -19,6 +19,8 @@ def pipeline(id):
  folder=STORAGE/'jobs'/id;folder.mkdir(parents=True,exist_ok=True)
  if data['provider']=='google' and not data.get('approved'):raise ValueError('Duplicate project needs new cost approval; create a new approved project')
  if data['provider']=='google' and providers.config().model_dump()!=data['pricing_snapshot']:raise ValueError('Provider configuration changed since cost approval. Create a new project with a fresh estimate.')
+ if elevenlabs.selected(data) and (not data.get('approved') or data.get('approval',{}).get('voice_fingerprint')!=elevenlabs.fingerprint()):raise elevenlabs.SpeechFailure('configuration')
+ if data.get('narration_provider')=='uploaded' and data.get('narration') and not (folder/'uploaded-narration').exists():raise ValueError('Upload narration before starting this project')
  update(id,'Analyzing product and creating Thai storyboard',8)
  if not data.get('brief'):
   # Intent prevents duplicate Gemini requests after a crash.
@@ -82,8 +84,9 @@ def main():
   try:pipeline(id)
   except Exception as e:
    from .google_errors import classify
-   with Session() as s: is_google=json.loads(s.get(Job,id).data).get('provider')=='google'
-   safe=classify(e) if is_google else None
+   with Session() as s:
+    failed_data=json.loads(s.get(Job,id).data);is_google=failed_data.get('provider')=='google';is_eleven=elevenlabs.selected(failed_data)
+   safe=e if isinstance(e,elevenlabs.SpeechFailure) else (elevenlabs.failure(e) if is_eleven and not is_google else (classify(e) if is_google else None))
    logging.warning('Job %s failed: %s',id,safe.category if safe else type(e).__name__)
    with Session.begin() as s:
     j=s.get(Job,id)

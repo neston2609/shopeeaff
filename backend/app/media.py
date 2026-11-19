@@ -53,19 +53,37 @@ def compose(folder,scenes,settings,product):
  run(['ffmpeg','-y','-i',str(folder/'final_video.mp4'),'-frames:v','1',str(folder/'thumbnail.jpg')])
  return info
 def narration(folder,scenes,settings,speech):
+ from . import elevenlabs
+ use_eleven=elevenlabs.selected(settings)
+ use_google=settings['provider']=='google' and settings.get('narration_provider','auto')=='auto'
  # Pad each scene narration to its exact scene boundary before concatenation.
  for i,scene in enumerate(scenes):
   src=folder/f'voice-{i}.mp3'
   uploaded=folder/'uploaded-narration'
-  if settings['provider']=='google' and settings['narration'] and not uploaded.exists():
+  if (use_google or use_eleven) and settings['narration'] and not uploaded.exists():
    if len(scene['narration'])>1500: raise ValueError('Narration too long')
    if not src.exists():
-    from .db import Session,Operation
+    from .db import Session,Operation,Job
+    from sqlalchemy import text,select
     key=folder.name+':tts:'+str(i)
     with Session.begin() as s:
+     s.execute(text('BEGIN IMMEDIATE'))
      if s.get(Operation,key):raise ValueError('Uncertain paid TTS submission; reconcile before resuming')
-     s.add(Operation(id=key,job_id=folder.name,state='intent'))
-    speech(scene['narration'],src,settings['voice'],settings['speed'])
+     job=s.get(Job,folder.name)
+     if job and job.status=='cancelled':raise InterruptedError('Cancelled')
+     cost=len(scene['narration'])*(elevenlabs.config().usd_per_1000_characters/1000 if use_eleven else settings.get('pricing_snapshot',{}).get('tts_rate',0))
+     if use_eleven:
+      if not settings.get('approved') or settings.get('approval',{}).get('voice_fingerprint')!=elevenlabs.fingerprint():raise elevenlabs.SpeechFailure('configuration')
+      used=sum(o.cost for o in s.scalars(select(Operation).where(Operation.job_id==folder.name)).all())
+      if used+cost>settings.get('approved_budget',0):raise elevenlabs.SpeechFailure('configuration')
+     s.add(Operation(id=key,job_id=folder.name,state='intent',cost=cost))
+    if use_eleven:
+     try:elevenlabs.speech(scene['narration'],src,settings.get('elevenlabs_voice_id') or elevenlabs.config().voice_id,settings['speed'])
+     except elevenlabs.SpeechFailure as error:
+      with Session.begin() as s:s.get(Operation,key).state='submission_uncertain' if error.uncertain else 'rejected'
+      raise
+     elevenlabs.record_success(folder.name)
+    else:speech(scene['narration'],src,settings['voice'],settings['speed'])
     with Session.begin() as s:s.get(Operation,key).state='done'
    length=float(probe(src)['format']['duration'])
    if length>8: raise ValueError(f'Scene {i+1} narration exceeds 8 seconds; shorten script or increase speaking speed')

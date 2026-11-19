@@ -72,8 +72,19 @@ class Project(BaseModel):
  regenerate_voice:bool=False
  quote_id:str|None=Field(default=None,pattern=r'^[a-f0-9]{32}$')
  request_id:str|None=Field(default=None,min_length=16,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
+ narration_provider:Literal['auto','elevenlabs','uploaded','silent']='auto'
+ elevenlabs_voice_id:str=Field(default='',max_length=100,pattern=r'^[a-zA-Z0-9_-]*$')
 class ConnectionTest(BaseModel):
  approve_live_checks:bool=False
+ request_id:str=Field(min_length=16,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
+class ElevenLabsConfig(BaseModel):
+ model_id:str=Field(default='eleven_v3',max_length=100,pattern=r'^eleven_[a-zA-Z0-9_]+$')
+ voice_id:str=Field(default='',max_length=100,pattern=r'^[a-zA-Z0-9_-]*$')
+ usd_per_1000_characters:float=Field(default=.10,gt=0,le=100)
+ pricing_verified:str=Field(default='Unverified - configure your plan estimate',max_length=150)
+class VoicePreview(BaseModel):
+ approved:bool=False
+ approved_budget:float=Field(default=0,ge=0,le=10)
  request_id:str=Field(min_length=16,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
 class ProviderConfig(BaseModel):
  auth_method:Literal['service_account','adc']='service_account'

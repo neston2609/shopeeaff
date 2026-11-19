@@ -11,6 +11,7 @@ from .security import auth,hasher,digest,cipher
 from . import providers
 from . import budgets,google_verification
 from .google_errors import GoogleFailure,classify
+from . import elevenlabs
 
 app=FastAPI(title='Shopee Aff AI Studio',docs_url=None,redoc_url=None,openapi_url=None)
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=os.getenv('ALLOWED_HOSTS','localhost,127.0.0.1,testserver,aff.pramool.bid').split(','))
@@ -134,7 +135,7 @@ def estimate_api(p:Project):return budgets.quote(p,providers.config())
 def create_job(p:Project):
  cost=estimate(p);c=providers.config()
  if not p.approved or cost>p.approved_budget:raise HTTPException(422,'Explicit approval and sufficient budget required')
- if p.provider=='google' and cost>c.max_video:raise HTTPException(422,'Per-video budget exceeded')
+ if budgets.requires_quote(p) and cost>c.max_video:raise HTTPException(422,'Per-video budget exceeded')
  if p.brief and len(p.brief.scenes)!=__import__('math').ceil(p.duration/8):raise HTTPException(422,'Storyboard scene count must match target duration')
  with Session.begin() as s:
   s.execute(text('BEGIN IMMEDIATE'));product=payload(get_record(s,p.product_id,'product'))
@@ -146,17 +147,23 @@ def create_job(p:Project):
    if previous['digest']!=request_digest:raise HTTPException(409,'Request key was already used for different project settings')
    return job_json(get_job(s,previous['job_id']))
   quote_row=quote_value=None
-  if p.provider=='google':
+  if budgets.requires_quote(p):
    quote_row,quote_value=budgets.validate_quote(s,p,c,get_record(s,p.product_id,'product'))
-   try:providers.credentials()
-   except Exception as error:raise classify(error) from None
+   if p.provider=='google':
+    try:providers.credentials()
+    except Exception as error:raise classify(error) from None
+   if elevenlabs.selected(p.model_dump()):
+    elevenlabs.key()
+    if not (p.elevenlabs_voice_id or elevenlabs.config().voice_id) or not .7<=p.speed<=1.2:raise elevenlabs.SpeechFailure('configuration')
   if p.accuracy and not product.get('images'):raise HTTPException(422,'Product Accuracy Mode requires an authorized product image')
   all_jobs=s.scalars(select(Job)).all()
+  previews=s.scalars(select(Record).where(Record.kind=='voice_preview')).all()
   now=time.time()
   for period,budget in [(86400,c.daily_budget),(86400*31,c.monthly_budget)]:
-   used=sum(json.loads(j.data).get('reserved_cost',0) for j in all_jobs if j.created>=now-period)
+   used=sum(json.loads(j.data).get('reserved_cost',0) for j in all_jobs if j.created>=now-period)+sum(json.loads(r.data).get('estimated_cost',0) for r in previews if r.created>=now-period)
    if cost+used>budget:raise HTTPException(422,'Daily or monthly budget exceeded')
   data=p.model_dump();data['reserved_cost']=cost;data['pricing_snapshot']=c.model_dump();data['product_snapshot']=product
+  if elevenlabs.selected(data):data['voice_snapshot']=elevenlabs.config().model_dump()
   if p.provider!='google' and not p.brief:data['brief']=providers.mock_brief(product,p.duration,p.style).model_dump()
   j=Job(id=uid(),product_id=p.product_id,status='draft',stage='Review storyboard / upload assets',data=json.dumps(data,ensure_ascii=False));s.add(j);s.flush()
   if p.regenerate_source:
@@ -167,6 +174,7 @@ def create_job(p:Project):
    for i in range(len(old['brief']['scenes'])):
     for filename in [f'scene-{i}.mp4',f'voice-{i}.mp3']:
      src=STORAGE/'jobs'/source.id/filename
+     if filename.endswith('.mp3') and (p.narration_provider!=old.get('narration_provider','auto') or p.elevenlabs_voice_id!=old.get('elevenlabs_voice_id','') or (elevenlabs.selected(data) and old.get('approval',{}).get('voice_fingerprint')!=elevenlabs.fingerprint())):continue
      if src.exists() and not (i==p.regenerate_scene and filename.endswith('.mp4')) and not (p.regenerate_voice and filename.endswith('.mp3')):shutil.copy2(src,folder/filename)
   if quote_row:budgets.approve_job(s,j,p,c,quote_row,quote_value)
   if p.request_id:s.add(Record(id='job-request:'+p.request_id,kind='job_request',data=json.dumps({'digest':request_digest,'job_id':j.id})))
@@ -192,10 +200,13 @@ def action(id:str,action:str):
   if action=='start':
    if j.status!='draft':raise HTTPException(409,'Only draft projects can start')
    data=json.loads(j.data)
+   if data.get('narration_provider')=='uploaded' and data.get('narration') and not (STORAGE/'jobs'/id/'uploaded-narration').exists():raise HTTPException(422,'Upload narration before starting')
    if data.get('provider')=='google':
     if not data.get('approved') or data.get('approved_budget',0)<data.get('reserved_cost',0):raise HTTPException(422,'Approve this project in Studio before starting')
     approval=data.get('approval')
     if approval and approval['fingerprint']!=google_verification.fingerprint():raise HTTPException(409,'Google configuration changed; create a new approved project')
+   if elevenlabs.selected(data):
+    if not data.get('approved') or data.get('approval',{}).get('voice_fingerprint')!=elevenlabs.fingerprint():raise HTTPException(409,'Approve the current ElevenLabs voice settings in Studio before starting')
    j.status='queued';j.stage='Queued'
   elif action=='cancel':
    if j.status=='completed':raise HTTPException(409,'Already completed')
@@ -258,7 +269,55 @@ def download(id:str,name:str):
  if not p.is_file():raise HTTPException(404)
  return FileResponse(p,filename=None if name.endswith(('.mp4','.jpg','.wav')) else name)
 @app.get('/api/settings',dependencies=[Depends(auth)])
-def settings():return dict(provider=providers.config().model_dump(),status=google_verification.current_status(),has_credentials=bool(setting('credential')),defaults=setting('defaults',{}))
+def settings():return dict(provider=providers.config().model_dump(),identity=providers.identity(),status=google_verification.current_status(),has_credentials=bool(setting('credential')),defaults=setting('defaults',{}))
+@app.get('/api/settings/elevenlabs',dependencies=[Depends(auth)])
+def elevenlabs_settings():return {'config':elevenlabs.config().model_dump(),'configured':bool(setting('elevenlabs_credential')),'revision':elevenlabs.fingerprint(),'status':elevenlabs.status()}
+@app.put('/api/settings/elevenlabs',dependencies=[Depends(auth)])
+def save_elevenlabs(c:ElevenLabsConfig):
+ from .provider_settings import update_settings
+ update_settings({'elevenlabs_config':c.model_dump()});return {'ok':True}
+@app.post('/api/settings/elevenlabs/key',dependencies=[Depends(auth)])
+async def save_elevenlabs_key(request:Request):
+ from .provider_settings import update_settings
+ try:
+  body=await request.json();value=body.get('key')
+  if not isinstance(value,str) or not __import__('re').fullmatch(r'[A-Za-z0-9_-]{20,256}',value):raise ValueError()
+ except Exception:raise HTTPException(422,'Invalid ElevenLabs API key')
+ update_settings({'elevenlabs_credential':cipher().encrypt(value.encode()).decode(),'elevenlabs_status':{'status':'Key saved - verification required','live_verified':False}})
+ return {'configured':True}
+@app.post('/api/settings/elevenlabs/test',dependencies=[Depends(auth)])
+def verify_elevenlabs():return elevenlabs.verify()
+@app.get('/api/settings/elevenlabs/preview-estimate',dependencies=[Depends(auth)])
+def eleven_preview_estimate():return elevenlabs.preview_estimate()
+@app.post('/api/settings/elevenlabs/preview',dependencies=[Depends(auth)])
+def eleven_preview(body:VoicePreview):
+ cost=elevenlabs.preview_estimate()['estimate_usd']
+ if not body.approved or body.approved_budget<cost:raise HTTPException(422,'Approve a sufficient preview budget before generating real audio')
+ if not elevenlabs.config().voice_id:raise elevenlabs.SpeechFailure('configuration')
+ id=hashlib.sha256(('eleven:'+body.request_id).encode()).hexdigest()[:32]
+ with Session.begin() as s:
+  s.execute(text('BEGIN IMMEDIATE'))
+  row=s.get(Record,'eleven-preview:'+id)
+  if row:
+   data=json.loads(row.data)
+   return data.get('result',{'status':'running','message':'Preview request already recorded; automatic resubmission blocked'})
+  cost=elevenlabs.preview_estimate()['estimate_usd']
+  if body.approved_budget<cost:raise HTTPException(409,'Voice pricing changed; approve the new preview estimate')
+  jobs=s.scalars(select(Job)).all();previews=s.scalars(select(Record).where(Record.kind=='voice_preview')).all();limits=providers.config();now=time.time()
+  for period,budget in [(86400,limits.daily_budget),(86400*31,limits.monthly_budget)]:
+   used=sum(json.loads(j.data).get('reserved_cost',0) for j in jobs if j.created>=now-period)+sum(json.loads(r.data).get('estimated_cost',0) for r in previews if r.created>=now-period)
+   if cost+used>budget:raise HTTPException(422,'Daily or monthly budget exceeded')
+  s.add(Record(id='eleven-preview:'+id,kind='voice_preview',data=json.dumps({'state':'running','estimated_cost':cost,'approved_budget':body.approved_budget,'fingerprint':elevenlabs.fingerprint()})))
+ try:
+  folder=STORAGE/'provider-tests'/id;folder.mkdir(parents=True,exist_ok=True)
+  elevenlabs.speech(elevenlabs.PREVIEW_TEXT,folder/'preview.mp3',elevenlabs.config().voice_id,1)
+  elevenlabs.record_success('preview:'+id)
+  url=f'/api/settings/tests/{id}/audio';value=elevenlabs.status();value['preview_audio_url']=url;set_setting('elevenlabs_status',value)
+  result={'status':'completed','live_verified':True,'audio_url':url,'estimated_cost_usd':cost}
+ except Exception as error:result={'status':'failed','live_verified':False,'error':elevenlabs.failure(error).public(),'estimated_cost_usd':cost}
+ with Session.begin() as s:
+  row=s.get(Record,'eleven-preview:'+id);data=json.loads(row.data);data['state']='done';data['result']=result;row.data=json.dumps(data)
+ return result
 @app.put('/api/settings/provider',dependencies=[Depends(auth)])
 def save_provider(c:ProviderConfig):
  from .provider_settings import update_settings
@@ -324,5 +383,7 @@ def system():
  return dict(version='1.1.0',environment=os.getenv('APP_ENV','development'),url=os.getenv('APP_URL',''),database='ok',backend='ok',worker='online' if time.time()-beat<45 else 'offline',worker_last_seen=beat,free_disk_gb=round(shutil.disk_usage(STORAGE).free/1024**3,2),google=google_verification.current_status(),checked=time.time())
 @app.exception_handler(GoogleFailure)
 async def google_error(request,error):return __import__('fastapi').responses.JSONResponse({'detail':str(error),'error':error.public()},status_code=422)
+@app.exception_handler(elevenlabs.SpeechFailure)
+async def speech_error(request,error):return __import__('fastapi').responses.JSONResponse({'detail':str(error),'error':error.public()},status_code=422)
 @app.exception_handler(ValueError)
 async def value_error(request,e):return __import__('fastapi').responses.JSONResponse({'detail':str(e)[:500]},status_code=422)

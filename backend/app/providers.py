@@ -21,6 +21,11 @@ def client():
  c=config()
  # A billable submission must never be retried implicitly by the SDK.
  return genai.Client(vertexai=True,project=c.project,location=c.location,credentials=credentials(),http_options=types.HttpOptions(api_version='v1',timeout=120000,retry_options=types.HttpRetryOptions(attempts=1)))
+def identity():
+ try:
+  credential=credentials()
+  return {'project':config().project,'service_account_email':getattr(credential,'service_account_email','Application Default Credentials')}
+ except Exception:return {'project':config().project,'service_account_email':None}
 def mock_brief(product,duration=30,style='Problem → Solution'):
  name=product['name']; n=math.ceil(duration/8)
  lines=[f'กำลังมองหา {name} อยู่ใช่ไหม',product.get('description','')[:180] or f'มาทำความรู้จัก {name}',f'ราคา {product["price"]:,.0f} บาท' if product.get('price') else 'ดูรายละเอียดสินค้าจากร้านค้า', 'ตรวจสอบรายละเอียดและเงื่อนไขที่ลิงก์สินค้า', 'สนใจดูเพิ่มเติมได้ที่ลิงก์สินค้า']

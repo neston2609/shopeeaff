@@ -1,5 +1,6 @@
 """Public-safe provider failures. Never return or log exception bodies or credentials."""
 import socket
+import re
 import httpx
 from google.auth.exceptions import RefreshError,DefaultCredentialsError
 
@@ -17,10 +18,10 @@ MESSAGES={
  'submission_uncertain':'A paid submission may have been accepted but no operation ID was saved. Automatic resubmission is blocked; reconcile it in Google Cloud.',
 }
 class GoogleFailure(Exception):
- def __init__(self,category,*,uncertain=False,provider_code=None):
-  self.category=category;self.uncertain=uncertain;self.provider_code=provider_code
+ def __init__(self,category,*,uncertain=False,provider_code=None,diagnostic=None):
+  self.category=category;self.uncertain=uncertain;self.provider_code=provider_code;self.diagnostic=diagnostic or {}
   super().__init__(MESSAGES.get(category,MESSAGES['provider_error']))
- def public(self):return {'category':self.category,'message':str(self),'submission_uncertain':self.uncertain,**({'provider_code':self.provider_code} if self.provider_code is not None else {})}
+ def public(self):return {'category':self.category,'message':str(self),'submission_uncertain':self.uncertain,**({'provider_code':self.provider_code} if self.provider_code is not None else {}),**self.diagnostic}
 
 def classify(error):
  if isinstance(error,GoogleFailure):return error
@@ -45,4 +46,14 @@ def classify(error):
  elif '400' in code or isinstance(error,ValueError):category='configuration'
  elif 'quota exceeded' in raw or 'rate limit' in raw:category='quota'
  else:category='provider_error'
- return GoogleFailure(category,provider_code=int(code) if code.isdigit() else None)
+ diagnostic={}
+ try:
+  body=response.json() if response is not None else {}
+  for detail in body.get('error',{}).get('details',[]):
+   if not detail.get('@type','').endswith('ErrorInfo'):continue
+   values={'reason':detail.get('reason'),'service':detail.get('metadata',{}).get('service'),'permission':detail.get('metadata',{}).get('permission')}
+   patterns={'reason':r'[A-Z][A-Z0-9_]{2,100}','service':r'[a-z0-9.-]+\.googleapis\.com','permission':r'[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9_]+){1,5}'}
+   for key,value in values.items():
+    if isinstance(value,str) and re.fullmatch(patterns[key],value):diagnostic[key]=value
+ except Exception:pass
+ return GoogleFailure(category,provider_code=int(code) if code.isdigit() else None,diagnostic=diagnostic)
