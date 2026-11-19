@@ -7,7 +7,7 @@ from sqlalchemy import select,func,text
 from PIL import Image,UnidentifiedImageError
 from .db import *
 from .schemas import *
-from .security import auth,hasher,digest,cipher
+from .security import auth,hasher,digest,cipher,revoke_user_sessions
 from . import providers
 from . import budgets,google_verification
 from .google_errors import GoogleFailure,classify
@@ -57,14 +57,44 @@ async def login(request:Request,response:Response):
   if not u: return Response(content='{"detail":"Invalid username or password"}',status_code=401,media_type='application/json')
   token=secrets.token_urlsafe(48);csrf=secrets.token_urlsafe(32)
   s.add(LoginSession(id=digest(token),csrf=csrf,expires=time.time()+43200))
+  s.add(Record(id='session-owner:'+digest(token),kind='session_owner',data=json.dumps({'username':name})))
  response.set_cookie('studio_session',token,httponly=True,secure=os.getenv('APP_ENV')=='production',samesite='strict',max_age=43200,path='/')
  return {'username':name,'csrf':csrf}
 @app.get('/api/me')
-def me(session=Depends(auth)): return {'username':'admin','csrf':session.csrf}
+def me(session=Depends(auth)): return {'username':session.username,'csrf':session.csrf}
 @app.post('/api/logout')
 def logout(response:Response,session=Depends(auth)):
- with Session.begin() as s:s.delete(s.get(LoginSession,session.id))
+ with Session.begin() as s:
+  row=s.get(LoginSession,session.id)
+  if row:s.delete(row)
+  owner=s.get(Record,'session-owner:'+session.id)
+  if owner:s.delete(owner)
  response.delete_cookie('studio_session');return {'ok':True}
+@app.post('/api/account/password')
+async def change_password(request:Request,response:Response,session=Depends(auth)):
+ try:body=await request.json()
+ except Exception:raise HTTPException(422,'Invalid password request')
+ if not isinstance(body,dict):raise HTTPException(422,'Invalid password request')
+ current=body.get('current_password');new=body.get('new_password');confirmation=body.get('confirm_password')
+ if not all(isinstance(v,str) for v in [current,new,confirmation]) or not 1<=len(current)<=500 or not 14<=len(new)<=128:
+  raise HTTPException(422,'New password must contain 14 to 128 characters')
+ if new!=confirmation:raise HTTPException(422,'New password confirmation does not match')
+ if new==current:raise HTTPException(422,'Choose a different password')
+ key='password-limit:'+hashlib.sha256(session.username.encode()).hexdigest()+':'+str(int(time.time()//900))
+ with Session.begin() as s:
+  s.execute(text('BEGIN IMMEDIATE'))
+  limit=s.get(Record,key);count=int(limit.data) if limit else 0
+  if count>=5:raise HTTPException(429,'Too many attempts; try again in 15 minutes')
+  if not limit:s.add(Record(id=key,kind='ratelimit',data='1'))
+  else:limit.data=str(count+1)
+  user=s.get(User,session.username)
+  try:hasher.verify(user.password,current)
+  except Exception:return __import__('fastapi').responses.JSONResponse({'detail':'Current password is incorrect'},status_code=400)
+  user.password=hasher.hash(new)
+  revoke_user_sessions(s,session.username)
+ response.delete_cookie('studio_session',path='/',secure=os.getenv('APP_ENV')=='production',httponly=True,samesite='strict')
+ return {'ok':True,'sign_in_required':True}
+
 @app.get('/api/dashboard',dependencies=[Depends(auth)])
 def dashboard():
  with Session() as s:

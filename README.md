@@ -26,6 +26,10 @@ Mock generates a real labeled vertical MP4. Its default narration track is **sil
 
 ## Security and data
 
+Signed-in users can change their password in **ตั้งค่าระบบ → เปลี่ยนรหัสผ่าน** using their current password and a new password of 14–128 characters. Successful changes revoke every session for that account and require a fresh sign-in. Password checks are limited to five attempts per 15-minute window. Sessions are bound to the actual signed-in user; older sessions without an identity binding must sign in again after this update.
+
+For an administrator-initiated recovery on the server, load the production environment and run `python -m app.admin --username admin --reset --generate` from the backend directory with the application virtual environment. This deliberately resets the existing account, prints a generated password once to the operator's terminal, and revokes its sessions. Never put the generated password in source control or logs.
+
 Argon2 passwords, opaque server-side expiring sessions, Secure/HttpOnly/SameSite cookies in production, session CSRF tokens, same-origin write validation, persistent login throttling, encrypted service account JSON, authenticated media, strict Shopee URL validation and validated uploads. The server never fetches user-entered product URLs. Production secrets and all runtime data are excluded from Git.
 
 SQLAlchemy tables store users, sessions, durable jobs and provider operations. Typed JSON records store product facts/images, provider configuration, templates and settings; a job snapshot contains projects, analysis, storyboard scenes, captions, generated asset references, usage reservations and publication history. Alembic tracks schema revisions. SQLite WAL and a single process lock keep queue ownership explicit. Deployment uses one worker; concurrency beyond one is deliberately unsupported.

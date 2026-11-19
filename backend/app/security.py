@@ -1,8 +1,8 @@
-import os,secrets,time,hashlib
+import os,secrets,time,hashlib,json
 from cryptography.fernet import Fernet
 from argon2 import PasswordHasher
 from fastapi import HTTPException,Request
-from .db import Session,LoginSession
+from .db import Session,LoginSession,Record,User
 hasher=PasswordHasher()
 def cipher():
  key=os.getenv('CREDENTIAL_ENCRYPTION_KEY')
@@ -14,6 +14,19 @@ def auth(request:Request):
  with Session() as s:
   row=s.get(LoginSession,digest(token))
   if not row or row.expires<time.time(): raise HTTPException(401,'Please sign in')
+  owner=s.get(Record,'session-owner:'+row.id)
+  username=json.loads(owner.data).get('username') if owner else None
+  if not username or not s.get(User,username):raise HTTPException(401,'Please sign in again')
+  row.username=username
   if request.method not in ('GET','HEAD','OPTIONS'):
    if not secrets.compare_digest(request.headers.get('x-csrf-token',''),row.csrf): raise HTTPException(403,'Invalid CSRF token')
  return row
+
+
+def revoke_user_sessions(s,username):
+ from sqlalchemy import select
+ for owner in s.scalars(select(Record).where(Record.kind=='session_owner')).all():
+  if json.loads(owner.data).get('username')!=username:continue
+  session=s.get(LoginSession,owner.id.removeprefix('session-owner:'))
+  if session:s.delete(session)
+  s.delete(owner)
