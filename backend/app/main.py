@@ -11,7 +11,7 @@ from .security import auth,hasher,digest,cipher,revoke_user_sessions
 from . import providers
 from . import budgets,google_verification
 from .google_errors import GoogleFailure,classify
-from . import elevenlabs
+from . import elevenlabs,product_fetch
 
 app=FastAPI(title='Shopee Aff AI Studio',docs_url=None,redoc_url=None,openapi_url=None)
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=os.getenv('ALLOWED_HOSTS','localhost,127.0.0.1,testserver,aff.pramool.bid').split(','))
@@ -103,6 +103,18 @@ def dashboard():
 @app.get('/api/products',dependencies=[Depends(auth)])
 def products():
  with Session() as s:return [payload(r) for r in s.scalars(select(Record).where(Record.kind=='product').order_by(Record.created.desc())).all()]
+@app.post('/api/products/fetch-information')
+def fetch_product_information(body:ProductFetchRequest,session=Depends(auth)):
+ try:product_fetch.validate_url(body.url)
+ except product_fetch.FetchFailure as error:raise HTTPException(422,str(error)) from None
+ key='product-fetch-limit:'+hashlib.sha256(session.username.encode()).hexdigest()+':'+str(int(time.time()//60))
+ with Session.begin() as s:
+  s.execute(text('BEGIN IMMEDIATE'));row=s.get(Record,key);count=int(row.data) if row else 0
+  if count>=10:raise HTTPException(429,'Too many fetch requests. Try again in one minute.')
+  if row:row.data=str(count+1)
+  else:s.add(Record(id=key,kind='ratelimit',data='1'))
+ try:return product_fetch.fetch_information(body.url)
+ except product_fetch.FetchFailure as error:raise HTTPException(422,str(error)) from None
 @app.post('/api/products',dependencies=[Depends(auth)])
 def create_product(p:Product):
  with Session.begin() as s:

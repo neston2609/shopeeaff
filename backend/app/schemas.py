@@ -1,6 +1,9 @@
 from pydantic import BaseModel,Field,field_validator,model_validator
 from typing import Literal
 from urllib.parse import urlparse
+class ProductFetchRequest(BaseModel):
+ url:str=Field(min_length=1,max_length=2000)
+
 class Product(BaseModel):
  name:str=Field(min_length=1,max_length=200)
  url:str=Field(default='',max_length=2000)

@@ -9,7 +9,7 @@ See [Windows](docs/INSTALL_WINDOWS.md) or [Linux](docs/INSTALL_LINUX.md). Produc
 ## Workflow
 
 1. Sign in using an administrator account initialized on the server.
-2. Add product facts and preserve the original Shopee affiliate URL. Authorized Shopee API credentials have not been supplied, so URL import opens the manual editor; no scraping or CAPTCHA bypass occurs.
+2. Add product facts and preserve the original Shopee affiliate URL. In Add New Product, Fetch Information can populate available public JSON-LD/Open Graph metadata; review all fields before saving. JavaScript-only or blocked Shopee pages require manual entry or future authorized API integration. Authorized Shopee API credentials have not been supplied, so URL import opens the manual editor; no scraping or CAPTCHA bypass occurs.
 3. Upload authorized product photos. The first photo is the primary image; reorder and remove images in the editor, then save.
 4. Open Studio; choose Mock, Google Veo, or manual Google Flow clips. Review duration, narration and Product Accuracy Mode.
 5. For Mock/manual, generate and edit the Thai storyboard. For Google, Gemini creates the storyboard after approval. Approve the displayed estimated USD budget and create a draft.
@@ -30,7 +30,7 @@ Signed-in users can change their password in **ตั้งค่าระบบ
 
 For an administrator-initiated recovery on the server, load the production environment and run `python -m app.admin --username admin --reset --generate` from the backend directory with the application virtual environment. This deliberately resets the existing account, prints a generated password once to the operator's terminal, and revokes its sessions. Never put the generated password in source control or logs.
 
-Argon2 passwords, opaque server-side expiring sessions, Secure/HttpOnly/SameSite cookies in production, session CSRF tokens, same-origin write validation, persistent login throttling, encrypted service account JSON, authenticated media, strict Shopee URL validation and validated uploads. The server never fetches user-entered product URLs. Production secrets and all runtime data are excluded from Git.
+Argon2 passwords, opaque server-side expiring sessions, Secure/HttpOnly/SameSite cookies in production, session CSRF tokens, same-origin write validation, persistent login throttling, encrypted service account JSON, authenticated media, strict Shopee URL validation and validated uploads. The explicit Fetch Information action reads public HTML metadata from HTTPS Shopee links only, with public-IP validation, pinned TLS connections, restricted redirects, time/size limits and per-account throttling. It sends no account cookies, does not execute page JavaScript or call private Shopee APIs, and never fabricates data when a page is blocked or has no metadata. The original affiliate link and existing product data remain unchanged until the user reviews and saves the form. Product images still require manual upload. Production secrets and all runtime data are excluded from Git.
 
 SQLAlchemy tables store users, sessions, durable jobs and provider operations. Typed JSON records store product facts/images, provider configuration, templates and settings; a job snapshot contains projects, analysis, storyboard scenes, captions, generated asset references, usage reservations and publication history. Alembic tracks schema revisions. SQLite WAL and a single process lock keep queue ownership explicit. Deployment uses one worker; concurrency beyond one is deliberately unsupported.
 
