@@ -42,7 +42,7 @@ def double_checks(monkeypatch,gemini_error=None,tts_error=None,metadata_error=No
   counts['metadata']+=1
   if metadata_error:raise metadata_error
   return {'metadata_only':True,'does_not_prove_veo_access':True,'service':{'status':'available','state':'ENABLED'},'permissions':{'status':'available','granted':['aiplatform.endpoints.predict']},'quotas':{'status':'available','remaining_capacity_verified':False}}
- monkeypatch.setattr(providers,'client',lambda:nullcontext(NS(models=NS(generate_content=text))))
+ monkeypatch.setattr(providers,'client',lambda **_:nullcontext(NS(models=NS(generate_content=text))))
  monkeypatch.setattr(verification.texttospeech,'TextToSpeechClient',lambda **_:NS(synthesize_speech=synth,list_voices=lambda **_:NS(voices=[NS(name='th-TH-Standard-A')])))
  monkeypatch.setattr(media,'probe',lambda _: {'streams':[{'codec_type':'audio'}]})
  monkeypatch.setattr(verification,'metadata',metadata)
@@ -261,3 +261,16 @@ def test_provider_keeps_real_sdk_client_open_until_submission_completes(monkeypa
  monkeypatch.setattr(providers,'client',factory)
  operation=providers.submit_video({'prompt':'isolated transport contract only'})
  assert operation.name.endswith('/contract-only') and len(calls)==1
+
+
+def test_text_region_is_separate_from_veo_and_defaults_are_supported(monkeypatch):
+ from app.schemas import ProviderConfig
+ c=ProviderConfig(project='test-project',location='us-central1',text_location='us')
+ assert c.text_model=='gemini-3.8-flash'
+ monkeypatch.setattr(providers,'config',lambda:c)
+ monkeypatch.setattr(providers,'credentials',lambda:object())
+ seen=[]
+ monkeypatch.setattr(providers.genai,'Client',lambda **kw:seen.append(kw))
+ providers.client(text=True);providers.client()
+ assert [v['location'] for v in seen]==['us','us-central1']
+ assert all(v['http_options'].retry_options.attempts==1 for v in seen)

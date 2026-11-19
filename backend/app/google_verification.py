@@ -75,11 +75,11 @@ def run_checks(test_id):
  else:
   def gemini():
    model=providers.config().text_model
-   thinking=types.ThinkingConfig(thinking_budget=0) if model.startswith('gemini-2.5-flash') else None
-   with providers.client() as ai:
+   thinking=types.ThinkingConfig(thinking_budget=0) if model.startswith('gemini-2.5-flash') else (types.ThinkingConfig(thinking_level='LOW') if model.startswith('gemini-3') else None)
+   with providers.client(text=True) as ai:
     response=ai.models.generate_content(model=model,contents='ตอบเพียงคำว่า สวัสดี',config=types.GenerateContentConfig(max_output_tokens=256,temperature=0,thinking_config=thinking,http_options=types.HttpOptions(timeout=30000)))
    if not response.text or not response.text.strip():raise GoogleFailure('provider_error')
-   return {'live_generation':True,'model':providers.config().text_model,'generated_characters':len(response.text)}
+   return {'live_generation':True,'model':providers.config().text_model,'region':providers.config().text_location,'generated_characters':len(response.text)}
   check('gemini',gemini)
   def tts():
    nonlocal voices,audio_url

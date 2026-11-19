@@ -16,6 +16,12 @@ In Studio, select **ElevenLabs** as the narration provider and choose a voice. S
 
 Provider/key/voice changes invalidate quotes and are blocked while active paid jobs or previews are running. The worker records each TTS submission before making the request. It never automatically repeats an ambiguous paid request, reuses successful audio, and does not silently fall back to another provider. Audio exceeding the scene's eight seconds requires a shorter script; regeneration requires new approval.
 
+## Gemini model and region
+
+As of November 19, 2026, Google lists `gemini-2.5-flash` as retired on October 20, 2026. New configurations default to `gemini-3.8-flash` in the `us` multi-region. Gemini text requests use the separate `text_location`; Veo keeps its configured `location` (default `us-central1`). Existing saved model choices are retained until explicitly updated. No automatic paid fallback or retry is performed.
+
+References: [Google lifecycle](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/model-versions), [Gemini 3.8 Flash regions](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash).
+
 ## Gemini 403
 
 ElevenLabs narration does not replace Gemini's script/storyboard generation or Veo's video generation. Successful Google TTS or model lookup does not prove permission to generate Gemini text.

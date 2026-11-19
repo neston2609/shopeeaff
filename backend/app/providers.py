@@ -17,10 +17,10 @@ def credentials():
  if not encrypted: raise ValueError('Upload Google Service Account JSON first')
  info=json.loads(cipher().decrypt(encrypted.encode()))
  return service_account.Credentials.from_service_account_info(info,scopes=['https://www.googleapis.com/auth/cloud-platform'])
-def client():
+def client(*,text=False):
  c=config()
  # A billable submission must never be retried implicitly by the SDK.
- return genai.Client(vertexai=True,project=c.project,location=c.location,credentials=credentials(),http_options=types.HttpOptions(api_version='v1',timeout=120000,retry_options=types.HttpRetryOptions(attempts=1)))
+ return genai.Client(vertexai=True,project=c.project,location=c.text_location if text else c.location,credentials=credentials(),http_options=types.HttpOptions(api_version='v1',timeout=120000,retry_options=types.HttpRetryOptions(attempts=1)))
 def identity():
  try:
   credential=credentials()
@@ -32,7 +32,7 @@ def mock_brief(product,duration=30,style='Problem → Solution'):
  return Brief(summary=product.get('description') or name,verified_features=[x for x in [name,product.get('brand'),product.get('specifications')] if x],suggestions=['แสดงสินค้าจริงจากภาพที่ได้รับอนุญาต','ใช้ภาพระยะใกล้พร้อมคำบรรยาย'],audience='ผู้ที่กำลังค้นหาสินค้าประเภทนี้',hook=lines[0],caption=f'{name} — ดูรายละเอียดและราคาปัจจุบันที่ลิงก์สินค้า (ลิงก์ Affiliate)',hashtags=['#Shopee','#ช้อปออนไลน์','#Affiliate'],scenes=[dict(number=i+1,purpose='Hook' if i==0 else 'Product details',prompt=f'Professional vertical product showcase, {name}. {style}. Preserve the exact product appearance. No invented accessories, no unsupported demonstrations, no generated text.',narration=lines[min(i,len(lines)-1)],overlay=name if i==0 else lines[min(i,len(lines)-1)][:70],duration=8,transition='fade') for i in range(n)])
 def generate_brief(product,duration,style):
  prompt='Generate a natural Thai affiliate video storyboard. Use only supplied verified product facts; do not invent reviews, experiences, discounts or certifications. Separate creative suggestions. Scene visual prompts must be English. Include affiliate disclosure in caption. Each scene is 8 seconds. Return '+str(math.ceil(duration/8))+' scenes. Target seconds: '+str(duration)+' Style: '+style+' Product JSON: '+json.dumps(product,ensure_ascii=False)
- with client() as ai:
+ with client(text=True) as ai:
   r=ai.models.generate_content(model=config().text_model,contents=prompt,config=types.GenerateContentConfig(response_mime_type='application/json',response_schema=Brief,temperature=.5,max_output_tokens=8192))
  return Brief.model_validate_json(r.text)
 def submit_video(scene,image=None):
