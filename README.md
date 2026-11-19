@@ -26,7 +26,7 @@ Mock generates a real labeled vertical MP4. Its default narration track is **sil
 
 ## Security and data
 
-Signed-in users can change their password in **ตั้งค่าระบบ → เปลี่ยนรหัสผ่าน** using their current password and a new password of 14–128 characters. Successful changes revoke every session for that account and require a fresh sign-in. Password checks are limited to five attempts per 15-minute window. Sessions are bound to the actual signed-in user; older sessions without an identity binding must sign in again after this update.
+Signed-in users can change their password in **System Settings → Change Password** using their current password and a new password of 14–128 characters. Successful changes revoke every session for that account and require a fresh sign-in. Password checks are limited to five attempts per 15-minute window. Sessions are bound to the actual signed-in user; older sessions without an identity binding must sign in again after this update.
 
 For an administrator-initiated recovery on the server, load the production environment and run `python -m app.admin --username admin --reset --generate` from the backend directory with the application virtual environment. This deliberately resets the existing account, prints a generated password once to the operator's terminal, and revokes its sessions. Never put the generated password in source control or logs.
 
